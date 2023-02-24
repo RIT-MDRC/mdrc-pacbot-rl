@@ -1,12 +1,9 @@
 """
-Experiment for checking that RLLib is working.
+Experiment for checking that PPO is working.
 """
-from ray.rllib.algorithms.ppo import PPOConfig
-from ray.rllib.models import ModelCatalog
-from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
 import torch.nn as nn
 from matplotlib import pyplot as plt
-
+from gymnasium.envs.classic_control.cartpole import CartPoleEnv
 
 class MyModel(TorchModelV2, nn.Module):
     def __init__(self, *args, **kwargs):
@@ -48,18 +45,6 @@ class MyModel(TorchModelV2, nn.Module):
 
     def value_function(self):
         return self._value.squeeze(-1)
-
-
-ModelCatalog.register_custom_model("my_model", MyModel)
-
-config = (
-    PPOConfig()
-    .environment("CartPole-v1")
-    .rollouts(num_rollout_workers=1)
-    .framework("torch")
-    .training(model={"custom_model": "my_model"})
-    .evaluation(evaluation_num_workers=1)
-)
 
 algo = config.build()
 

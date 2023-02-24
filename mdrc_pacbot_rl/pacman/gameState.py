@@ -4,7 +4,6 @@ from .ghostAgent import *
 from .pacbot import *
 from .grid import grid
 import copy
-import time
 
 
 
@@ -137,10 +136,8 @@ class GameState:
         self.blue.respawn()
 
     def _end_game(self):
-        self.elapsed_time += time.time() - self.previous_start
         self.play = False
         print("Score: " + str(self.score))
-        print("Time: " + str(self.elapsed_time))
 
     # Resets the round if Pacman dies with lives remaining
     # and ends the game if Pacman has no lives remaining.
@@ -203,11 +200,9 @@ class GameState:
             self.just_swapped_state = False
 
     def pause(self):
-        self.elapsed_time += time.time() - self.previous_start
         self.play = False
 
     def unpause(self):
-        self.previous_start = time.time()
         self.play = True
 
     def print_ghost_pos(self):
@@ -266,7 +261,6 @@ class GameState:
         self.state_counter = 0
         self.update_ticks = 0
         self.lives = starting_lives
-        self.elapsed_time = 0
         self._update_score()
         self.grid[cherry_pos[0]][cherry_pos[1]] = e
         self.ticks_since_spawn = 0
