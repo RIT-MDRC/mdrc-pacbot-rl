@@ -1,7 +1,7 @@
 """
 Gym environment wrapper for the Pacman game.
-Observation: Box space of 28x31x2. The first two dimensinos are the width and height,
-while the third dimension is a stack of grid data and entity (Pacman, ghosts) data.
+Observation: Box space of 2x28x31. Dims 2 and 3 are the width and height,
+while the first is a stack of grid data and entity (Pacman, ghosts) data.
 Action: Discrete space of nothing, up, down, left, right.
 """
 
@@ -18,7 +18,7 @@ RENDER_PIXEL_SCALE = 10
 
 class PacmanGym(gym.Env):
     def __init__(self, render_mode: str = ""):
-        self.observation_space = Box(0.0, 5.0, (GRID_WIDTH, GRID_HEIGHT, 2))
+        self.observation_space = Box(0.0, 5.0, (2, GRID_WIDTH, GRID_HEIGHT))
         self.action_space = Discrete(5)
         self.render_mode = render_mode
         self.game_state = GameState()
@@ -37,7 +37,7 @@ class PacmanGym(gym.Env):
         self.last_score = 0
         self.game_state.restart()
         self.game_state.unpause()
-        return self.create_obs()
+        return self.create_obs(), {}
 
     def step(self, action):
         old_pos = self.game_state.pacbot.pos
@@ -70,7 +70,7 @@ class PacmanGym(gym.Env):
             )
             pygame.display.update()
 
-        return self.create_obs(), reward, not self.game_state.play, {}
+        return self.create_obs(), reward, not self.game_state.play, {}, {}
 
     def update_surface(self):
         for y in range(GRID_HEIGHT):
@@ -116,5 +116,5 @@ class PacmanGym(gym.Env):
         ]
         for i, pos in enumerate(entity_positions):
             entities[pos[0]][pos[1]] = i + 1
-        obs = np.moveaxis(np.stack([grid, entities]), 0, -1)
+        obs = np.stack([grid, entities])
         return obs

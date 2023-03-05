@@ -5,3 +5,6 @@
 # Python
 .pytest_cache
 __pycache__
+
+# Artifacts
+/temp
