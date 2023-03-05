@@ -2,9 +2,10 @@
 Experiment where the agent performs random actions.
 """
 import torch.nn as nn
-from matplotlib import pyplot as plt
-from mdrc_pacbot_rl.pacman.gym import PacmanGym
+from matplotlib import pyplot as plt  # type: ignore
 from tqdm import tqdm
+
+from mdrc_pacbot_rl.pacman.gym import PacmanGym
 
 # Constants (for now)
 train_steps = 100

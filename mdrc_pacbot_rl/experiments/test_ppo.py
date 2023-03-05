@@ -2,16 +2,19 @@
 Experiment for checking that PPO is working.
 """
 from functools import reduce
-from typing import Tuple
+from typing import Any
+
+import envpool  # type: ignore
 import torch
 import torch.nn as nn
-from torch.distributions import Categorical
-from matplotlib import pyplot as plt
-from tqdm import tqdm
-import envpool
 from gym.envs.classic_control.cartpole import CartPoleEnv
+from matplotlib import pyplot as plt  # type: ignore
+from torch.distributions import Categorical
+from tqdm import tqdm
 
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
+
+_: Any
 
 # Constants (for now)
 num_envs = 128
@@ -133,10 +136,14 @@ for _ in tqdm(range(iterations), position=0):
             # Train policy network
             with torch.no_grad():
                 old_log_probs = p_net_old(prev_states)
-                old_act_probs = Categorical(logits=old_log_probs).log_prob(actions.squeeze())
+                old_act_probs = Categorical(logits=old_log_probs).log_prob(
+                    actions.squeeze()
+                )
             p_opt.zero_grad()
             new_log_probs = p_net(prev_states)
-            new_act_probs = Categorical(logits=new_log_probs).log_prob(actions.squeeze())
+            new_act_probs = Categorical(logits=new_log_probs).log_prob(
+                actions.squeeze()
+            )
             term1: torch.Tensor = (new_act_probs - old_act_probs).exp() * advantages
             term2: torch.Tensor = (1.0 + epsilon * advantages.sign()) * advantages
             p_loss = -term1.min(term2).mean()

@@ -1,12 +1,14 @@
+import math
+import random
+
 from .ghostpaths import *
 from .variables import *
-import random
-import math
 
 
 class GhostAgent:
-
-    def __init__(self, x1, y1, x2, y2, color, direction, game_state, start_path, scatter_pos):
+    def __init__(
+        self, x1, y1, x2, y2, color, direction, game_state, start_path, scatter_pos
+    ):
         # The color of the ghost determines its movement behavior.
         self.color = color
         self.init_direction = direction
@@ -18,23 +20,25 @@ class GhostAgent:
         self.frightened_counter = 0
 
     def _is_move_legal(self, move):
-        return (move != self.pos["current"] and
-                self.game_state.grid[move[0]][move[1]] != I and
-                self.game_state.grid[move[0]][move[1]] != n)
+        return (
+            move != self.pos["current"]
+            and self.game_state.grid[move[0]][move[1]] != I
+            and self.game_state.grid[move[0]][move[1]] != n
+        )
 
     # Returns a list of valid tiles for the ghost to move to. If no such tiles exist,
     # return a list containing only the ghost's current position.
     def _find_possible_moves(self):
-        (x, y) = self.pos['next']
+        (x, y) = self.pos["next"]
         possible = []
-        if self._is_move_legal((x+1, y)):
-            possible.append((x+1, y))
-        if self._is_move_legal((x, y+1)) and (x, y) not in ghost_no_up_tiles:
-            possible.append((x, y+1))
-        if self._is_move_legal((x-1, y)):
-            possible.append((x-1, y))
-        if self._is_move_legal((x, y-1)):
-            possible.append((x, y-1))
+        if self._is_move_legal((x + 1, y)):
+            possible.append((x + 1, y))
+        if self._is_move_legal((x, y + 1)) and (x, y) not in ghost_no_up_tiles:
+            possible.append((x, y + 1))
+        if self._is_move_legal((x - 1, y)):
+            possible.append((x - 1, y))
+        if self._is_move_legal((x, y - 1)):
+            possible.append((x, y - 1))
         if possible == []:
             possible.append(self.pos["current"])
         return possible
@@ -58,20 +62,30 @@ class GhostAgent:
         pacbot_target = (0, 0)
         if self.game_state.pacbot.direction == up:
             pacbot_target = (
-                self.game_state.pacbot.pos[0] - 2, self.game_state.pacbot.pos[1] + 2)
+                self.game_state.pacbot.pos[0] - 2,
+                self.game_state.pacbot.pos[1] + 2,
+            )
         elif self.game_state.pacbot.direction == down:
             pacbot_target = (
-                self.game_state.pacbot.pos[0], self.game_state.pacbot.pos[1] - 2)
+                self.game_state.pacbot.pos[0],
+                self.game_state.pacbot.pos[1] - 2,
+            )
         elif self.game_state.pacbot.direction == left:
             pacbot_target = (
-                self.game_state.pacbot.pos[0] - 2, self.game_state.pacbot.pos[1])
+                self.game_state.pacbot.pos[0] - 2,
+                self.game_state.pacbot.pos[1],
+            )
         elif self.game_state.pacbot.direction == right:
             pacbot_target = (
-                self.game_state.pacbot.pos[0] + 2, self.game_state.pacbot.pos[1])
-        x = pacbot_target[0] + (pacbot_target[0] -
-                                self.game_state.red.pos["current"][0])
-        y = pacbot_target[1] + (pacbot_target[1] -
-                                self.game_state.red.pos["current"][1])
+                self.game_state.pacbot.pos[0] + 2,
+                self.game_state.pacbot.pos[1],
+            )
+        x = pacbot_target[0] + (
+            pacbot_target[0] - self.game_state.red.pos["current"][0]
+        )
+        y = pacbot_target[1] + (
+            pacbot_target[1] - self.game_state.red.pos["current"][1]
+        )
 
         return self._get_move_based_on_target((x, y))
 
@@ -105,7 +119,12 @@ class GhostAgent:
     # to its scatter position (bottom left corner). If the ghost is far from Pacman,
     # return the move that will bring the ghost closest to Pacman.
     def _get_next_orange_chase_move(self):
-        if self._get_euclidian_distance(self.pos["current"], self.game_state.pacbot.pos) < 8:
+        if (
+            self._get_euclidian_distance(
+                self.pos["current"], self.game_state.pacbot.pos
+            )
+            < 8
+        ):
             return self._get_next_scatter_move()
         return self._get_move_based_on_target(self.game_state.pacbot.pos)
 
@@ -116,8 +135,9 @@ class GhostAgent:
         distances = []
         for tile in possible:
             distances.append(self._get_euclidian_distance(target, tile))
-        (min_distance, index) = min((min_distance, index)
-                                    for (index, min_distance) in enumerate(distances))
+        (min_distance, index) = min(
+            (min_distance, index) for (index, min_distance) in enumerate(distances)
+        )
 
         return (possible[index], self._get_direction(self.pos["next"], possible[index]))
 
@@ -160,7 +180,7 @@ class GhostAgent:
 
     # Returns the straight-line distance between two points.
     def _get_euclidian_distance(self, pos_a, pos_b):
-        return math.hypot(int(pos_a[0])-int(pos_b[0]), int(pos_a[1])-int(pos_b[1]))
+        return math.hypot(int(pos_a[0]) - int(pos_b[0]), int(pos_a[1]) - int(pos_b[1]))
 
     # Returns true if a round has just started; in this case, the ghost should follow
     # its predefined starting path.
@@ -180,7 +200,7 @@ class GhostAgent:
             return self.start_path[self.game_state.start_counter]
         elif self._should_follow_respawn_path():
             self.respawn_counter += 1
-            return respawn_path[self.respawn_counter-1]
+            return respawn_path[self.respawn_counter - 1]
         else:
             return self._get_next_state_move()
 
@@ -190,15 +210,15 @@ class GhostAgent:
         if self.frightened_counter > 0:
             self.frightened_counter -= 1
         next_moves = self._decide_next_moves()
-        self.pos['current'] = self.pos['next']
-        self.pos['next'] = next_moves[0]
+        self.pos["current"] = self.pos["next"]
+        self.pos["next"] = next_moves[0]
         self.direction = next_moves[1]
 
     # Sets the ghost's position back to the respawn zone and removes the frightened condition.
     # This function is called when the ghost gets eaten by Pacman.
     def send_home(self):
-        self.pos['current'] = ghost_home_pos
-        self.pos['next'] = (ghost_home_pos[0], ghost_home_pos[1]+1)
+        self.pos["current"] = ghost_home_pos
+        self.pos["next"] = (ghost_home_pos[0], ghost_home_pos[1] + 1)
         self.direction = up
         # This will make the ghost follow its respawn path, ensuring it leaves the respawn zone.
         self.respawn_counter = 0
@@ -218,8 +238,8 @@ class GhostAgent:
     # Distinct from send_home(), which only occurs when the ghost is eaten by Pacman.
     def respawn(self):
         self.pos = {
-            'current': (self.init_moves[0], self.init_moves[1]),
-            'next': (self.init_moves[2], self.init_moves[3])
+            "current": (self.init_moves[0], self.init_moves[1]),
+            "next": (self.init_moves[2], self.init_moves[3]),
         }
         self.direction = self.init_direction
         self.frightened_counter = 0

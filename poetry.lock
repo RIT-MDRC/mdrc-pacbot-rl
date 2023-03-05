@@ -575,6 +575,24 @@ files = [
 ]
 
 [[package]]
+name = "isort"
+version = "5.12.0"
+description = "A Python utility / library to sort Python imports."
+category = "dev"
+optional = false
+python-versions = ">=3.8.0"
+files = [
+    {file = "isort-5.12.0-py3-none-any.whl", hash = "sha256:f84c2818376e66cf843d497486ea8fed8700b340f308f076c6fb1229dff318b6"},
+    {file = "isort-5.12.0.tar.gz", hash = "sha256:8bef7dde241278824a6d83f44a544709b065191b95b6e50894bdc722fcba0504"},
+]
+
+[package.extras]
+colors = ["colorama (>=0.4.3)"]
+pipfile-deprecated-finder = ["pip-shims (>=0.5.2)", "pipreqs", "requirementslib"]
+plugins = ["setuptools"]
+requirements-deprecated-finder = ["pip-api", "pipreqs"]
+
+[[package]]
 name = "jax-jumpy"
 version = "0.2.0"
 description = "Common backend for JAX or numpy."
@@ -1361,6 +1379,18 @@ files = [
 ]
 
 [[package]]
+name = "types-tqdm"
+version = "4.65.0.0"
+description = "Typing stubs for tqdm"
+category = "main"
+optional = false
+python-versions = "*"
+files = [
+    {file = "types-tqdm-4.65.0.0.tar.gz", hash = "sha256:8707a0dd16a1f2061e316ddc5ef07908d7465193f0d2ed24be75b55e6b9e6cbe"},
+    {file = "types_tqdm-4.65.0.0-py3-none-any.whl", hash = "sha256:3377b5e34396b4e1661f8df7390051490918b8be36ae0f7b6864c1d806e95ef5"},
+]
+
+[[package]]
 name = "typing-extensions"
 version = "4.5.0"
 description = "Backported and Experimental Type Hints for Python 3.7+"
@@ -1406,4 +1436,4 @@ testing = ["flake8 (<5)", "func-timeout", "jaraco.functools", "jaraco.itertools"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9"
-content-hash = "f1b412e66c1f50517be28c585696a5311144edd5f7fef6943a7f583c48940d5a"
+content-hash = "084035c8eda965d651122fff99b1975fb7b5a1c49709801bfa4eeb526bc9333b"

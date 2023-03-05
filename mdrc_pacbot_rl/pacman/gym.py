@@ -5,11 +5,12 @@ while the first is a stack of grid data and entity (Pacman, ghosts) data.
 Action: Discrete space of nothing, up, down, left, right.
 """
 
-import numpy as np
 import gymnasium as gym
-from gymnasium.spaces import Discrete, Box
-from .gameState import GameState
+import numpy as np
 import pygame
+from gymnasium.spaces import Box, Discrete
+
+from .gameState import GameState
 
 GRID_WIDTH = 28
 GRID_HEIGHT = 31

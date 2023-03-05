@@ -3,6 +3,7 @@ A rollout buffer for use with on-policy algorithms.
 Unlike a replay buffer, rollouts only store experience collected under a single policy.
 """
 from typing import List, Tuple
+
 import torch
 from torch import nn
 
@@ -23,8 +24,8 @@ class RolloutBuffer:
         device: torch.device,
     ):
         k = torch.float
-        state_shape = [num_steps + 1, num_envs] + list(state_shape)
-        action_shape = [num_steps, num_envs] + list(action_shape)
+        state_shape = torch.Size([num_steps + 1, num_envs] + list(state_shape))
+        action_shape = torch.Size([num_steps, num_envs] + list(action_shape))
         self.num_envs = num_envs
         self.num_steps = num_steps
         self.next = 0
@@ -91,23 +92,24 @@ class RolloutBuffer:
         Returns previous states, states, actions, rewards, rewards to go, advantages, and dones.
         """
         with torch.no_grad():
-            tensor_opts = dict(dtype=torch.float, device=self.device)
-            rewards_to_go = torch.zeros([self.num_steps, self.num_envs], **tensor_opts)
-            advantages = torch.zeros([self.num_steps, self.num_envs], **tensor_opts)
-            step_rewards_to_go: torch.Tensor = v_net(
-                self.states[self.next]
-            ).squeeze()
+            rewards_to_go = torch.zeros(
+                [self.num_steps, self.num_envs], dtype=torch.float, device=self.device
+            )
+            advantages = torch.zeros(
+                [self.num_steps, self.num_envs], dtype=torch.float, device=self.device
+            )
+            step_rewards_to_go: torch.Tensor = v_net(self.states[self.next]).squeeze()
 
             # Calculate advantage estimates and rewards to go
             state_values = step_rewards_to_go.clone()
-            step_advantages = torch.zeros([self.num_envs], **tensor_opts)
+            step_advantages = torch.zeros(
+                [self.num_envs], dtype=torch.float, device=self.device
+            )
             for i in reversed(range(self.num_steps)):
                 prev_states = self.states[i]
                 rewards = self.rewards[i]
                 inv_dones = 1.0 - self.dones[i]
-                prev_state_values: torch.Tensor = v_net(
-                    prev_states
-                ).squeeze()
+                prev_state_values: torch.Tensor = v_net(prev_states).squeeze()
                 delta = (
                     rewards + discount * inv_dones * state_values - prev_state_values
                 )

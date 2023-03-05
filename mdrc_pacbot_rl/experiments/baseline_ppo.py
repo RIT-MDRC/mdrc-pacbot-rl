@@ -1,19 +1,22 @@
 """
 Baseline for PPO on Pacman gym.
 """
-from functools import reduce
-from typing import Tuple
+from typing import Any
+
 import torch
 import torch.nn as nn
-from torch.distributions import Categorical
-from matplotlib import pyplot as plt
-from tqdm import tqdm
+from gymnasium.spaces.discrete import Discrete
 from gymnasium.vector.sync_vector_env import SyncVectorEnv
+from matplotlib import pyplot as plt  # type: ignore
+from torch.distributions import Categorical
+from tqdm import tqdm
 
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.pacman.gym import PacmanGym
 
-# Constants (for now)
+_: Any
+
+# Hyperparameters
 num_envs = 128
 train_steps = 500
 iterations = 1000
@@ -25,13 +28,6 @@ epsilon = 0.2
 max_eval_steps = 100
 device = torch.device("cpu")
 
-def get_img_size(old_w: int, old_h: int, conv: torch.nn.Conv2d) -> Tuple[int, int]:
-    """
-    Returns the size of the image after the convolution is run on it.
-    """
-    w = (old_w + 2 * int(conv.padding[1]) - conv.dilation[1] * (conv.kernel_size[1] - 1) - 1) // conv.stride[1] + 1
-    h = (old_h + 2 * int(conv.padding[0]) - conv.dilation[0] * (conv.kernel_size[0] - 1) - 1) // conv.stride[0] + 1
-    return w, h
 
 def copy_params(src: nn.Module, dest: nn.Module):
     """
@@ -52,12 +48,8 @@ def init_orthogonal(src: nn.Module):
 class ValueNet(nn.Module):
     def __init__(self, obs_shape: torch.Size):
         nn.Module.__init__(self)
-        h, w = obs_shape[1:]
         self.cnn1 = nn.Conv2d(obs_shape[0], 8, 3)
-        w, h = get_img_size(w, h, self.cnn1)
         self.cnn2 = nn.Conv2d(8, 16, 3)
-        w, h = get_img_size(w, h, self.cnn2)
-        flat_dim = w * h * 16
         self.v_layer1 = nn.Linear(1736, 256)
         self.v_layer2 = nn.Linear(256, 256)
         self.v_layer3 = nn.Linear(256, 1)
@@ -76,12 +68,8 @@ class ValueNet(nn.Module):
 class PolicyNet(nn.Module):
     def __init__(self, obs_shape: torch.Size, action_count: int):
         nn.Module.__init__(self)
-        h, w = obs_shape[1:]
         self.cnn1 = nn.Conv2d(obs_shape[0], 8, 3)
-        w, h = get_img_size(w, h, self.cnn1)
         self.cnn2 = nn.Conv2d(8, 16, 3)
-        w, h = get_img_size(w, h, self.cnn2)
-        flat_dim = w * h * 16
         self.a_layer1 = nn.Linear(1736, 256)
         self.a_layer2 = nn.Linear(256, 256)
         self.a_layer3 = nn.Linear(256, action_count)
@@ -105,16 +93,21 @@ reward_totals = []
 entropies = []
 
 # Init PPO
-obs_space = env.envs[0].observation_space
+obs_shape = env.envs[0].observation_space.shape
+if not obs_shape:
+    raise RuntimeError("Observation space doesn't have shape")
+obs_size = torch.Size(obs_shape)
 act_space = env.envs[0].action_space
-v_net = ValueNet(obs_space.shape)
-p_net = PolicyNet(obs_space.shape, act_space.n)
-p_net_old = PolicyNet(obs_space.shape, act_space.n)
+if not isinstance(act_space, Discrete):
+    raise RuntimeError("Action space was not discrete")
+v_net = ValueNet(torch.Size(obs_shape))
+p_net = PolicyNet(obs_size, int(act_space.n))
+p_net_old = PolicyNet(obs_size, int(act_space.n))
 p_net_old.eval()
 v_opt = torch.optim.Adam(v_net.parameters(), lr=0.01)
 p_opt = torch.optim.Adam(p_net.parameters(), lr=0.0001)
 buffer = RolloutBuffer(
-    obs_space.shape,
+    obs_size,
     torch.Size((1,)),
     torch.int,
     num_envs,
@@ -150,10 +143,14 @@ for _ in tqdm(range(iterations), position=0):
             # Train policy network
             with torch.no_grad():
                 old_log_probs = p_net_old(prev_states)
-                old_act_probs = Categorical(logits=old_log_probs).log_prob(actions.squeeze())
+                old_act_probs = Categorical(logits=old_log_probs).log_prob(
+                    actions.squeeze()
+                )
             p_opt.zero_grad()
             new_log_probs = p_net(prev_states)
-            new_act_probs = Categorical(logits=new_log_probs).log_prob(actions.squeeze())
+            new_act_probs = Categorical(logits=new_log_probs).log_prob(
+                actions.squeeze()
+            )
             term1: torch.Tensor = (new_act_probs - old_act_probs).exp() * advantages
             term2: torch.Tensor = (1.0 + epsilon * advantages.sign()) * advantages
             p_loss = -term1.min(term2).mean()

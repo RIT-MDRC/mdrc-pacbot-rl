@@ -1,9 +1,11 @@
 from .variables import *
 
+
 class PacBot:
     """
-        Allows initializing and updating information about PacBot
+    Allows initializing and updating information about PacBot
     """
+
     def __init__(self):
         self.respawn()
 

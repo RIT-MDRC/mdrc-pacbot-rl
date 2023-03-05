@@ -1,25 +1,61 @@
-from .variables import *
-from .ghostpaths import *
-from .ghostAgent import *
-from .pacbot import *
-from .grid import grid
 import copy
 
-
+from .ghostAgent import *
+from .ghostpaths import *
+from .grid import grid
+from .pacbot import *
+from .variables import *
 
 FREQUENCY = game_frequency * ticks_per_update
+
 
 class GameState:
     def __init__(self):
         self.pacbot = PacBot()
-        self.red = GhostAgent(red_init_pos[0], red_init_pos[1], red_init_npos[0],
-                              red_init_npos[1], red, red_init_dir, self, [], red_scatter_pos)
-        self.pink = GhostAgent(pink_init_pos[0], pink_init_pos[1], pink_init_npos[0],
-                               pink_init_npos[1], pink, pink_init_dir, self, pink_start_path, pink_scatter_pos)
-        self.orange = GhostAgent(orange_init_pos[0], orange_init_pos[1], orange_init_npos[0],
-                                 orange_init_npos[1], orange, red_init_dir, self, orange_start_path, orange_scatter_pos)
-        self.blue = GhostAgent(blue_init_pos[0], blue_init_pos[1], blue_init_npos[0],
-                               blue_init_npos[1], blue, blue_init_dir, self, blue_start_path, blue_scatter_pos)
+        self.red = GhostAgent(
+            red_init_pos[0],
+            red_init_pos[1],
+            red_init_npos[0],
+            red_init_npos[1],
+            red,
+            red_init_dir,
+            self,
+            [],
+            red_scatter_pos,
+        )
+        self.pink = GhostAgent(
+            pink_init_pos[0],
+            pink_init_pos[1],
+            pink_init_npos[0],
+            pink_init_npos[1],
+            pink,
+            pink_init_dir,
+            self,
+            pink_start_path,
+            pink_scatter_pos,
+        )
+        self.orange = GhostAgent(
+            orange_init_pos[0],
+            orange_init_pos[1],
+            orange_init_npos[0],
+            orange_init_npos[1],
+            orange,
+            red_init_dir,
+            self,
+            orange_start_path,
+            orange_scatter_pos,
+        )
+        self.blue = GhostAgent(
+            blue_init_pos[0],
+            blue_init_pos[1],
+            blue_init_npos[0],
+            blue_init_npos[1],
+            blue,
+            blue_init_dir,
+            self,
+            blue_start_path,
+            blue_scatter_pos,
+        )
         self.just_swapped_state = False
         self.restart()
         self.ticks_since_spawn = 0
@@ -86,8 +122,10 @@ class GameState:
     # Returns true if the cherry should be spawned; this happens
     # when only 170 pellets remain.
     def _should_spawn_cherry(self):
-        if (self.pellets == 170 or self.pellets == 70) and self.prev_cherry_pellets != self.pellets:
-            #print("Cherry spawned")
+        if (
+            self.pellets == 170 or self.pellets == 70
+        ) and self.prev_cherry_pellets != self.pellets:
+            # print("Cherry spawned")
             self.prev_cherry_pellets = self.pellets
             return True
         # print(self.pellets)
@@ -96,7 +134,7 @@ class GameState:
     def _should_remove_cherry(self):
         if self.ticks_since_spawn >= FREQUENCY * 10:
             self.ticks_since_spawn = 0
-            return True 
+            return True
         else:
             return False
 
@@ -109,10 +147,7 @@ class GameState:
         self.grid[cherry_pos[0]][cherry_pos[1]] = e
         self.cherry = False
 
-
         # cherry to disappear when pacman dies
-
-        
 
     # Updates the score based on what Pacman has just eaten
     # (what is in Pacman's current space on the board).
@@ -159,10 +194,24 @@ class GameState:
 
     # Returns true if Pacman has collided with a ghost and the ghost is not frightened.
     def _should_die(self):
-        return ((self.red.pos["current"] == self.pacbot.pos and self.red.frightened_counter == 0) or
-                (self.pink.pos["current"] == self.pacbot.pos and self.pink.frightened_counter == 0) or
-                (self.orange.pos["current"] == self.pacbot.pos and self.orange.frightened_counter == 0) or
-                (self.blue.pos["current"] == self.pacbot.pos and self.blue.frightened_counter == 0))
+        return (
+            (
+                self.red.pos["current"] == self.pacbot.pos
+                and self.red.frightened_counter == 0
+            )
+            or (
+                self.pink.pos["current"] == self.pacbot.pos
+                and self.pink.frightened_counter == 0
+            )
+            or (
+                self.orange.pos["current"] == self.pacbot.pos
+                and self.orange.frightened_counter == 0
+            )
+            or (
+                self.blue.pos["current"] == self.pacbot.pos
+                and self.blue.frightened_counter == 0
+            )
+        )
 
     # Checks for ghosts that have been eaten and sends them back
     # to the respawn zone if they have been eaten.
@@ -209,7 +258,7 @@ class GameState:
         ghosts = [self.red, self.pink, self.blue, self.orange]
         ret = ""
         for ghost in ghosts:
-            ret += str(ghost.pos["current"])+" "
+            ret += str(ghost.pos["current"]) + " "
         print(ret)
 
     def next_step(self):
