@@ -95,7 +95,7 @@ class RolloutBuffer:
             rewards_to_go = torch.zeros([self.num_steps, self.num_envs], **tensor_opts)
             advantages = torch.zeros([self.num_steps, self.num_envs], **tensor_opts)
             step_rewards_to_go: torch.Tensor = v_net(
-                torch.unsqueeze(self.states[self.next], 0)
+                self.states[self.next]
             ).squeeze()
 
             # Calculate advantage estimates and rewards to go
@@ -106,7 +106,7 @@ class RolloutBuffer:
                 rewards = self.rewards[i]
                 inv_dones = 1.0 - self.dones[i]
                 prev_state_values: torch.Tensor = v_net(
-                    prev_states.unsqueeze(0)
+                    prev_states
                 ).squeeze()
                 delta = (
                     rewards + discount * inv_dones * state_values - prev_state_values
@@ -118,11 +118,6 @@ class RolloutBuffer:
                 )
                 advantages[i] = step_advantages
                 rewards_to_go[i] = step_rewards_to_go
-                step_advantages = (
-                    delta + discount * lambda_ * step_advantages * inv_dones
-                )
-                advantages[i] = step_advantages
-                state_values = prev_state_values
 
             # Permute transitions to decorrelate them
             exp_count = self.num_envs * self.num_steps

@@ -7,19 +7,22 @@ import torch
 import torch.nn as nn
 from torch.distributions import Categorical
 from matplotlib import pyplot as plt
-from gymnasium.envs.classic_control.cartpole import CartPoleEnv
 from tqdm import tqdm
+import envpool
+from gym.envs.classic_control.cartpole import CartPoleEnv
 
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 
 # Constants (for now)
-train_steps = 128
-iterations = 50000 // train_steps
+num_envs = 128
+train_steps = 500
+iterations = 300
 train_iters = 2
-train_batch_size = 64
-discount = 1.0
+train_batch_size = 512
+discount = 0.98
 lambda_ = 0.95
 epsilon = 0.2
+max_eval_steps = 500
 device = torch.device("cpu")
 
 
@@ -32,20 +35,28 @@ def copy_params(src: nn.Module, dest: nn.Module):
             dest_.data.copy_(src_.data)
 
 
+def init_orthogonal(src: nn.Module):
+    with torch.no_grad():
+        for param in src.parameters():
+            if len(param.size()) >= 2:
+                param.copy_(torch.nn.init.orthogonal_(param.data))
+
+
 class ValueNet(nn.Module):
     def __init__(self, obs_shape: torch.Size):
         nn.Module.__init__(self)
         flat_obs_dim = reduce(lambda e1, e2: e1 * e2, obs_shape, 1)
-        self.v_layer1 = nn.Linear(flat_obs_dim, 32)
-        self.v_layer2 = nn.Linear(32, 32)
-        self.v_layer3 = nn.Linear(32, 1)
-        self.l_relu = nn.LeakyReLU(0.01)
+        self.v_layer1 = nn.Linear(flat_obs_dim, 256)
+        self.v_layer2 = nn.Linear(256, 256)
+        self.v_layer3 = nn.Linear(256, 1)
+        self.relu = nn.ReLU()
+        init_orthogonal(self)
 
     def forward(self, input: torch.Tensor):
         x = self.v_layer1(input.flatten(1))
-        x = self.l_relu(x)
+        x = self.relu(x)
         x = self.v_layer2(x)
-        x = self.l_relu(x)
+        x = self.relu(x)
         x = self.v_layer3(x)
         return x
 
@@ -54,24 +65,27 @@ class PolicyNet(nn.Module):
     def __init__(self, obs_shape: torch.Size, action_count: int):
         nn.Module.__init__(self)
         flat_obs_dim = reduce(lambda e1, e2: e1 * e2, obs_shape, 1)
-        self.a_layer1 = nn.Linear(flat_obs_dim, 32)
-        self.a_layer2 = nn.Linear(32, 32)
-        self.a_layer3 = nn.Linear(32, action_count)
-        self.l_relu = nn.LeakyReLU(0.01)
+        self.a_layer1 = nn.Linear(flat_obs_dim, 256)
+        self.a_layer2 = nn.Linear(256, 256)
+        self.a_layer3 = nn.Linear(256, action_count)
+        self.relu = nn.ReLU()
         self.logits = nn.LogSoftmax(1)
+        init_orthogonal(self)
 
     def forward(self, input: torch.Tensor):
         x = self.a_layer1(input.flatten(1))
-        x = self.l_relu(x)
+        x = self.relu(x)
         x = self.a_layer2(x)
-        x = self.l_relu(x)
+        x = self.relu(x)
         x = self.a_layer3(x)
         x = self.logits(x)
         return x
 
 
-env = CartPoleEnv()
+env = envpool.make("CartPole-v1", "gym", num_envs=num_envs)
+test_env = CartPoleEnv()
 reward_totals = []
+entropies = []
 
 # Init PPO
 obs_space = env.observation_space
@@ -80,10 +94,15 @@ v_net = ValueNet(obs_space.shape)
 p_net = PolicyNet(obs_space.shape, act_space.n)
 p_net_old = PolicyNet(obs_space.shape, act_space.n)
 p_net_old.eval()
-v_opt = torch.optim.Adam(v_net.parameters(), lr=0.001)
-p_opt = torch.optim.Adam(p_net.parameters(), lr=0.003)
+v_opt = torch.optim.Adam(v_net.parameters(), lr=0.01)
+p_opt = torch.optim.Adam(p_net.parameters(), lr=0.0001)
 buffer = RolloutBuffer(
-    obs_space.shape, torch.Size((act_space.n,)), torch.int, 1, train_steps, device
+    obs_space.shape,
+    torch.Size((1,)),
+    torch.int,
+    num_envs,
+    train_steps,
+    device,
 )
 
 obs = torch.Tensor(env.reset()[0])
@@ -92,18 +111,16 @@ for _ in tqdm(range(iterations), position=0):
     # Collect experience
     with torch.no_grad():
         for _ in tqdm(range(train_steps), position=1):
-            action = (
-                Categorical(logits=p_net(obs.unsqueeze(0)).squeeze()).sample().item()
-            )
-            obs_, reward, done, _, _ = env.step(action)
+            actions = Categorical(logits=p_net(obs)).sample().numpy()
+            obs_, rewards, dones, _, _ = env.step(actions)
             buffer.insert_step(
-                obs.unsqueeze(0), torch.Tensor([action]), [reward], [done]
+                obs, torch.from_numpy(actions).unsqueeze(-1), rewards, dones
             )
-            obs = torch.Tensor(obs_)
+            obs = torch.from_numpy(obs_)
             if done:
                 obs = torch.Tensor(env.reset()[0])
                 done = False
-        buffer.insert_final_step(obs.unsqueeze(0))
+        buffer.insert_final_step(obs)
 
     # Train
     p_net.train()
@@ -114,12 +131,15 @@ for _ in tqdm(range(iterations), position=0):
         batches = buffer.samples(train_batch_size, discount, lambda_, v_net)
         for prev_states, _, actions, _, rewards_to_go, advantages, _ in batches:
             # Train policy network
-            old_log_probs = p_net_old(prev_states)
+            with torch.no_grad():
+                old_log_probs = p_net_old(prev_states)
+                old_act_probs = Categorical(logits=old_log_probs).log_prob(actions.squeeze())
             p_opt.zero_grad()
             new_log_probs = p_net(prev_states)
-            term1: torch.Tensor = (new_log_probs - old_log_probs).exp() * advantages
+            new_act_probs = Categorical(logits=new_log_probs).log_prob(actions.squeeze())
+            term1: torch.Tensor = (new_act_probs - old_act_probs).exp() * advantages
             term2: torch.Tensor = (1.0 + epsilon * advantages.sign()) * advantages
-            p_loss = -(term1.minimum(term2).mean())
+            p_loss = -term1.min(term2).mean()
             p_loss.backward()
             p_opt.step()
 
@@ -135,28 +155,38 @@ for _ in tqdm(range(iterations), position=0):
     buffer.clear()
 
     # Evaluate
-    obs = torch.Tensor(env.reset()[0])
+    obs = torch.Tensor(test_env.reset()[0])
     done = False
     with torch.no_grad():
+        # Visualize
         reward_total = 0
-        for _ in range(8):
-            for _ in range(16):
-                action = (
-                    Categorical(logits=p_net(obs.unsqueeze(0)).squeeze())
-                    .sample()
-                    .item()
-                )
-                obs_, reward, done, _, _ = env.step(action)
+        entropy_total = 0.0
+        obs = torch.Tensor(test_env.reset()[0])
+        eval_steps = 8
+        for _ in range(eval_steps):
+            avg_entropy = 0.0
+            steps_taken = 0
+            for _ in range(max_eval_steps):
+                distr = Categorical(logits=p_net(obs.unsqueeze(0)).squeeze())
+                action = distr.sample().item()
+                obs_, reward, done, _, _ = test_env.step(action)
                 obs = torch.Tensor(obs_)
-                reward_total += reward
+                steps_taken += 1
                 if done:
-                    obs = torch.Tensor(env.reset()[0])
-                    done = False
+                    obs = torch.Tensor(test_env.reset()[0])
                     break
-        reward_totals.append(reward_total)
-
+                reward_total += reward
+                avg_entropy += distr.entropy()
+            avg_entropy /= steps_taken
+            entropy_total += avg_entropy
+        reward_totals.append(reward_total / eval_steps)
+        entropies.append(entropy_total / eval_steps)
     obs = torch.Tensor(env.reset()[0])
     done = False
 
-plt.plot(reward_totals)
+figure, axis = plt.subplots(2, 1)
+axis[0].plot(reward_totals)
+axis[0].set_title("eval reward")
+axis[1].plot(entropies)
+axis[1].set_title("entropy")
 plt.show()
