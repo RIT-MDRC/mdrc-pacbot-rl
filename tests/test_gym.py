@@ -30,8 +30,8 @@ def test_random_action(gym_env: PacmanGym):
     "action,dx,dy",
     [
         (0, 0, 0),
-        (1, 0, 0), # Can't move due to being blocked
-        (2, 0, 0), # Can't move due to being blocked
+        (1, 0, 0),  # Can't move due to being blocked
+        (2, 0, 0),  # Can't move due to being blocked
         (3, -1, 0),
         (4, 1, 0),
     ],
