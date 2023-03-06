@@ -148,7 +148,7 @@ class PolicyNet(nn.Module):
 
 
 env = envpool.make("CartPole-v1", "gym", num_envs=num_envs)
-test_env = CartPoleEnv()
+test_env = CartPoleEnv(render_mode="human")
 reward_totals = []
 entropies = []
 
