@@ -103,6 +103,7 @@ v_lr = 0.01
 p_lr = 0.001
 device = torch.device("cpu")
 
+
 # The value network takes in an observation and returns a single value, the
 # predicted return
 class ValueNet(nn.Module):
@@ -198,7 +199,7 @@ for _ in tqdm(range(iterations), position=0):
         # The rollout buffer provides randomized minibatches of samples
         batches = buffer.samples(train_batch_size, discount, lambda_, v_net)
         for prev_states, _, actions, _, rewards_to_go, advantages, _ in batches:
-            # Train policy network. 
+            # Train policy network.
             #
             # First, we get the log probabilities of taking the actions we took
             # when we took them. You can store this in the replay buffer right
@@ -225,14 +226,14 @@ for _ in tqdm(range(iterations), position=0):
             # clamp(current_probs/prev_probs, 1 - epsilon, 1 + epsilon) *
             # advantages). The actual code written is just a more optimized way
             # of writing that.
-            # 
+            #
             # Basically, we only want to update our network if the probability
             # of taking the actions with our current net is slightly less or
             # slightly more than the probability of taking the actions under the
             # old net. If that ratio is too high or too low, then the clipping
             # kicks in, and the gradient goes to 0 since we're differentiating a
             # constant (1 - epsilon or 1 + epsilon).
-            # 
+            #
             # Note that the only major difference is the importance sampling
             # term (the ratio) and the clipping; the loss function for A2C is
             # current_log_probs * advantages, which is very similar. Also, we're

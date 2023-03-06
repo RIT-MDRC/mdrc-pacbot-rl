@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 
+
 def copy_params(src: nn.Module, dest: nn.Module):
     """
     Copies params from one model to another.
