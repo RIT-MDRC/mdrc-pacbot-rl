@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from mdrc_pacbot_rl.pacman.gym import PacmanGym
 
-# Constants (for now)
+# Hyperparameters
 train_steps = 100
 
 env = PacmanGym(render_mode="human")
