@@ -8,4 +8,4 @@ jobs:
     - uses: snok/install-poetry@v1
     - uses: psf/black@stable
     - uses: isort/isort-action@v1.0.0
-    - run: mypy .
+    - run: poetry run mypy .
