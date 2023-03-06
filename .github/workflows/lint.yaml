@@ -9,5 +9,5 @@ jobs:
     - uses: psf/black@stable
     - uses: isort/isort-action@v1.0.0
     - run: |
-      poetry shell
-      mypy .
+        poetry shell
+        mypy .

@@ -7,5 +7,5 @@ jobs:
     - uses: actions/checkout@v2
     - uses: snok/install-poetry@v1
     - run: |
-      poetry shell
-      pytest tests
+        poetry shell
+        pytest tests
