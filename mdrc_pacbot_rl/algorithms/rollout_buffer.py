@@ -1,6 +1,6 @@
 """
-A rollout buffer for use with on-policy algorithms.
-Unlike a replay buffer, rollouts only store experience collected under a single policy.
+A rollout buffer for use with on-policy algorithms. Unlike a replay buffer,
+rollouts only store experience collected under a single policy.
 """
 from typing import List, Tuple
 
@@ -10,8 +10,8 @@ from torch import nn
 
 class RolloutBuffer:
     """
-    Stores transitions and generates mini batches from the latest policy.
-    Also computes advantage estimates.
+    Stores transitions and generates mini batches from the latest policy. Also
+    computes advantage estimates.
     """
 
     def __init__(
@@ -51,10 +51,10 @@ class RolloutBuffer:
         dones: List[bool],
     ):
         """
-        Inserts a transition from each environment into the buffer.
-        Make sure more data than steps aren't inserted.
-        Insert the state that was observed PRIOR to performing the action.
-        The final state returned will be inserted using `insert_final_step`.
+        Inserts a transition from each environment into the buffer. Make sure
+        more data than steps aren't inserted. Insert the state that was observed
+        PRIOR to performing the action. The final state returned will be
+        inserted using `insert_final_step`.
         """
         with torch.no_grad():
             self.states[self.next].copy_(states)
@@ -89,7 +89,8 @@ class RolloutBuffer:
     ]:
         """
         Generates minibatches of experience, incorporating advantage estimates.
-        Returns previous states, states, actions, rewards, rewards to go, advantages, and dones.
+        Returns previous states, states, actions, rewards, rewards to go,
+        advantages, and dones.
         """
         with torch.no_grad():
             rewards_to_go = torch.zeros(

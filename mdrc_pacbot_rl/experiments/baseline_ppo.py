@@ -13,6 +13,7 @@ from tqdm import tqdm
 
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.pacman.gym import PacmanGym
+from mdrc_pacbot_rl.utils import copy_params, init_orthogonal
 
 _: Any
 
@@ -27,22 +28,6 @@ lambda_ = 0.95
 epsilon = 0.2
 max_eval_steps = 100
 device = torch.device("cpu")
-
-
-def copy_params(src: nn.Module, dest: nn.Module):
-    """
-    Copies params from one model to another.
-    """
-    with torch.no_grad():
-        for dest_, src_ in zip(dest.parameters(), src.parameters()):
-            dest_.data.copy_(src_.data)
-
-
-def init_orthogonal(src: nn.Module):
-    with torch.no_grad():
-        for param in src.parameters():
-            if len(param.size()) >= 2:
-                param.copy_(torch.nn.init.orthogonal_(param.data))
 
 
 class ValueNet(nn.Module):
