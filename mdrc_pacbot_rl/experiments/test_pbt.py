@@ -8,10 +8,11 @@ import envpool  # type: ignore
 import torch
 import torch.nn as nn
 from gym.envs.classic_control.cartpole import CartPoleEnv
-from ray.air import Checkpoint, session
 from ray import tune
-from torch.distributions import Categorical
+from ray.air import Checkpoint, session
 from ray.tune.schedulers import PopulationBasedTraining
+from torch.distributions import Categorical
+
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.utils import copy_params, init_orthogonal
 
