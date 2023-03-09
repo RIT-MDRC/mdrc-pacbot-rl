@@ -18,12 +18,17 @@ RENDER_PIXEL_SCALE = 10
 
 
 class PacmanGym(gym.Env):
-    def __init__(self, render_mode: str = ""):
+    def __init__(self, ticks_per_step: int = 12, render_mode: str = ""):
+        """
+        Args:
+            ticks_per_step: How many ticks the game should move every step. Ghosts move every 12 ticks.
+        """
         self.observation_space = Box(0.0, 5.0, (2, GRID_WIDTH, GRID_HEIGHT))
         self.action_space = Discrete(5)
         self.render_mode = render_mode
         self.game_state = GameState()
         self.last_score = 0
+        self.ticks_per_step = ticks_per_step
 
         if render_mode == "human":
             pygame.init()
@@ -54,7 +59,8 @@ class PacmanGym(gym.Env):
             new_pos = (min(old_pos[0] + 1, GRID_WIDTH - 1), old_pos[1])
         if self.game_state.grid[new_pos[0]][new_pos[1]] != 1:
             self.game_state.pacbot.update(new_pos)
-        self.game_state.next_step()
+        for _ in range(self.ticks_per_step):
+            self.game_state.next_step()
 
         reward = self.game_state.score - self.last_score
         if reward == float("Nan"):
@@ -63,7 +69,7 @@ class PacmanGym(gym.Env):
 
         if self.render_mode == "human":
             self.update_surface()
-            self.clock.tick(1)
+            self.clock.tick(5)
             pygame.transform.scale(
                 self.surface,
                 (GRID_WIDTH * RENDER_PIXEL_SCALE, GRID_HEIGHT * RENDER_PIXEL_SCALE),

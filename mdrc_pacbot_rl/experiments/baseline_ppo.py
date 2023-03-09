@@ -1,7 +1,12 @@
 """
 Baseline for PPO on Pacman gym.
+
+CLI Args:
+    --eval: Run the last saved policy in the test environment, with visualization.
+    --resume: Resume training from the last saved policy.
 """
 from typing import Any
+import sys
 
 import torch
 import torch.nn as nn
@@ -13,16 +18,16 @@ from tqdm import tqdm
 
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.pacman.gym import PacmanGym
-from mdrc_pacbot_rl.utils import copy_params, init_orthogonal
+from mdrc_pacbot_rl.utils import copy_params, get_img_size, init_orthogonal
 
 _: Any
 
 # Hyperparameters
 num_envs = 128
 train_steps = 500
-iterations = 1000
+iterations = 50
 train_iters = 2
-train_batch_size = 512
+train_batch_size = 256
 discount = 0.98
 lambda_ = 0.95
 epsilon = 0.2
@@ -33,41 +38,53 @@ device = torch.device("cpu")
 class ValueNet(nn.Module):
     def __init__(self, obs_shape: torch.Size):
         nn.Module.__init__(self)
-        self.cnn1 = nn.Conv2d(obs_shape[0], 8, 3)
-        self.cnn2 = nn.Conv2d(8, 16, 3)
-        self.v_layer1 = nn.Linear(1736, 256)
-        self.v_layer2 = nn.Linear(256, 256)
-        self.v_layer3 = nn.Linear(256, 1)
+        w, h = obs_shape[1:]
+        self.cnn1 = nn.Conv2d(obs_shape[0], 8, 3, 2)
+        h, w = get_img_size(h, w, self.cnn1)
+        self.cnn2 = nn.Conv2d(8, 12, 3, 2)
+        h, w = get_img_size(h, w, self.cnn2)
+        flat_dim = h * w * self.cnn2.out_channels
+        self.v_layer1 = nn.Linear(flat_dim, 128)
+        self.v_layer2 = nn.Linear(128, 1)
         self.relu = nn.ReLU()
         init_orthogonal(self)
 
     def forward(self, input: torch.Tensor):
-        x = self.v_layer1(input.flatten(1))
+        x = self.cnn1(input)
+        x = self.relu(x)
+        x = self.cnn2(x)
+        x = x.flatten(1)
+        x = self.relu(x)
+        x = self.v_layer1(x)
         x = self.relu(x)
         x = self.v_layer2(x)
-        x = self.relu(x)
-        x = self.v_layer3(x)
         return x
 
 
 class PolicyNet(nn.Module):
     def __init__(self, obs_shape: torch.Size, action_count: int):
         nn.Module.__init__(self)
-        self.cnn1 = nn.Conv2d(obs_shape[0], 8, 3)
-        self.cnn2 = nn.Conv2d(8, 16, 3)
-        self.a_layer1 = nn.Linear(1736, 256)
-        self.a_layer2 = nn.Linear(256, 256)
-        self.a_layer3 = nn.Linear(256, action_count)
+        w, h = obs_shape[1:]
+        self.cnn1 = nn.Conv2d(obs_shape[0], 8, 3, 2)
+        h, w = get_img_size(h, w, self.cnn1)
+        self.cnn2 = nn.Conv2d(8, 12, 3, 2)
+        h, w = get_img_size(h, w, self.cnn2)
+        flat_dim = h * w * self.cnn2.out_channels
+        self.a_layer1 = nn.Linear(flat_dim, 128)
+        self.a_layer2 = nn.Linear(128, action_count)
         self.relu = nn.ReLU()
         self.logits = nn.LogSoftmax(1)
         init_orthogonal(self)
 
     def forward(self, input: torch.Tensor):
-        x = self.a_layer1(input.flatten(1))
+        x = self.cnn1(input)
+        x = self.relu(x)
+        x = self.cnn2(x)
+        x = x.flatten(1)
+        x = self.relu(x)
+        x = self.a_layer1(x)
         x = self.relu(x)
         x = self.a_layer2(x)
-        x = self.relu(x)
-        x = self.a_layer3(x)
         x = self.logits(x)
         return x
 
@@ -77,6 +94,22 @@ test_env = PacmanGym()
 reward_totals = []
 entropies = []
 
+# If evaluating, just run the eval env
+if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
+    test_env = PacmanGym(render_mode="human")
+    p_net = torch.load("temp/PNet.pt")
+    with torch.no_grad():
+        obs = torch.Tensor(test_env.reset()[0])
+        for _ in range(max_eval_steps):
+            distr = Categorical(logits=p_net(obs.unsqueeze(0)).squeeze())
+            action = distr.sample().item()
+            obs_, reward, done, _, _ = test_env.step(action)
+            obs = torch.Tensor(obs_)
+            if done:
+                obs = torch.Tensor(test_env.reset()[0])
+                break
+    quit()
+
 # Init PPO
 obs_shape = env.envs[0].observation_space.shape
 if not obs_shape:
@@ -85,9 +118,14 @@ obs_size = torch.Size(obs_shape)
 act_space = env.envs[0].action_space
 if not isinstance(act_space, Discrete):
     raise RuntimeError("Action space was not discrete")
-v_net = ValueNet(torch.Size(obs_shape))
-p_net = PolicyNet(obs_size, int(act_space.n))
-p_net_old = PolicyNet(obs_size, int(act_space.n))
+if len(sys.argv) >= 2 and sys.argv[1] == "--resume":
+    v_net = torch.load("temp/VNet.pt")
+    p_net = torch.load("temp/PNet.pt")
+    p_net_old = torch.load("temp/PNet.pt")
+else:
+    v_net = ValueNet(torch.Size(obs_shape))
+    p_net = PolicyNet(obs_size, int(act_space.n))
+    p_net_old = PolicyNet(obs_size, int(act_space.n))
 p_net_old.eval()
 v_opt = torch.optim.Adam(v_net.parameters(), lr=0.01)
 p_opt = torch.optim.Adam(p_net.parameters(), lr=0.0001)
@@ -183,8 +221,8 @@ for _ in tqdm(range(iterations), position=0):
     obs = torch.Tensor(env.reset()[0])
     done = False
 
-torch.save(v_net, "VNet.pt")
-torch.save(p_net, "PNet.pt")
+torch.save(v_net, "temp/VNet.pt")
+torch.save(p_net, "temp/PNet.pt")
 
 figure, axis = plt.subplots(2, 1)
 axis[0].plot(reward_totals)
