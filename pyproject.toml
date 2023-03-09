@@ -17,6 +17,7 @@ gymnasium = "^0.27.1"
 tqdm = "^4.64.1"
 envpool = "^0.8.1"
 types-tqdm = "^4.65.0.0"
+ray = {extras = ["tune"], version = "^2.3.0"}
 
 
 [tool.poetry.group.dev.dependencies]
