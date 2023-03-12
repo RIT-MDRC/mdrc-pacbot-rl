@@ -10,6 +10,7 @@ import torch.nn as nn
 from gym.envs.classic_control.cartpole import CartPoleEnv
 from ray import tune
 from ray.air import Checkpoint, session
+from ray.air.integrations.wandb import WandbLoggerCallback
 from ray.tune.schedulers import PopulationBasedTraining
 from torch.distributions import Categorical
 
@@ -23,11 +24,10 @@ _: Any
 # training.
 num_envs = 128
 train_steps = 500
-iterations = 20
+iterations = 300
 max_eval_steps = 500
 perturbation_interval = 10
-report_interval = 10
-trials_at_a_time = 2  # Number of trials to keep track of at a time
+trials_at_a_time = 5  # Number of trials to keep track of at a time
 config = {
     "v_lr": tune.uniform(0.001, 0.1),
     "p_lr": tune.uniform(0.001, 0.1),
@@ -149,6 +149,8 @@ def run(config: dict):
         v_net.train()
         copy_params(p_net, p_net_old)
 
+        total_v_loss = 0.0
+        total_p_loss = 0.0
         for _ in range(train_iters):
             # The rollout buffer provides randomized minibatches of samples
             batches = buffer.samples(train_batch_size, discount, lambda_, v_net)
@@ -169,6 +171,7 @@ def run(config: dict):
                 p_loss = -term1.min(term2).mean()
                 p_loss.backward()
                 p_opt.step()
+                total_p_loss += p_loss.item()
 
                 # Train value network
                 v_opt.zero_grad()
@@ -176,54 +179,56 @@ def run(config: dict):
                 v_loss = (diff * diff).mean()
                 v_loss.backward()
                 v_opt.step()
+                total_v_loss += v_loss.item()
 
         p_net.eval()
         v_net.eval()
         buffer.clear()
 
         # Evaluate
-        if step % report_interval == 0:
-            done = False
-            with torch.no_grad():
-                reward_total = 0
-                entropy_total = 0.0
-                obs = torch.Tensor(test_env.reset()[0])
-                eval_steps = 8
-                for _ in range(eval_steps):
-                    avg_entropy = 0.0
-                    steps_taken = 0
-                    for _ in range(max_eval_steps):
-                        distr = Categorical(logits=p_net(obs.unsqueeze(0)).squeeze())
-                        action = distr.sample().item()
-                        obs_, reward, done, _, _ = test_env.step(action)
-                        obs = torch.Tensor(obs_)
-                        steps_taken += 1
-                        if done:
-                            obs = torch.Tensor(test_env.reset()[0])
-                            break
-                        reward_total += reward
-                        avg_entropy += distr.entropy().mean().item()
-                    avg_entropy /= steps_taken
-                    entropy_total += avg_entropy
+        done = False
+        with torch.no_grad():
+            reward_total = 0
+            entropy_total = 0.0
+            obs = torch.Tensor(test_env.reset()[0])
+            eval_steps = 8
+            for _ in range(eval_steps):
+                avg_entropy = 0.0
+                steps_taken = 0
+                for _ in range(max_eval_steps):
+                    distr = Categorical(logits=p_net(obs.unsqueeze(0)).squeeze())
+                    action = distr.sample().item()
+                    obs_, reward, done, _, _ = test_env.step(action)
+                    obs = torch.Tensor(obs_)
+                    steps_taken += 1
+                    if done:
+                        obs = torch.Tensor(test_env.reset()[0])
+                        break
+                    reward_total += reward
+                    avg_entropy += distr.entropy().mean().item()
+                avg_entropy /= steps_taken
+                entropy_total += avg_entropy
 
-            # Perform checkpointing and report
-            checkpoint = Checkpoint.from_dict(
-                {
-                    "step": step,
-                    "v_net_state_dict": v_net.state_dict(),
-                    "p_net_state_dict": p_net.state_dict(),
-                    "v_opt_state_dict": v_opt.state_dict(),
-                    "p_opt_state_dict": p_opt.state_dict(),
-                }
-            )
-            session.report(
-                {
-                    "step": step,
-                    "avg_reward": reward_total / eval_steps,
-                    "avg_entropy": entropy_total / eval_steps,
-                },
-                checkpoint=checkpoint,
-            )
+        # Perform checkpointing and report
+        checkpoint = Checkpoint.from_dict(
+            {
+                "step": step,
+                "v_net_state_dict": v_net.state_dict(),
+                "p_net_state_dict": p_net.state_dict(),
+                "v_opt_state_dict": v_opt.state_dict(),
+                "p_opt_state_dict": p_opt.state_dict(),
+            }
+        )
+        session.report(
+            {
+                "step": step,
+                "avg_eval_episode_reward": reward_total / eval_steps,
+                "avg_eval_entropy": entropy_total / eval_steps,
+                "avg_v_loss": total_v_loss / train_iters,
+                "avg_p_loss": total_p_loss / train_iters,
+            },
+            checkpoint=checkpoint,
+        )
 
         obs = torch.Tensor(env.reset()[0])
         done = False
@@ -232,7 +237,7 @@ def run(config: dict):
 # Use PBT to find hyperparameters
 pbt_scheduler = PopulationBasedTraining(
     time_attr="step",
-    metric="avg_reward",
+    metric="avg_eval_episode_reward",
     mode="max",
     perturbation_interval=perturbation_interval,
     hyperparam_mutations=config,
@@ -243,4 +248,9 @@ analysis = tune.run(
     resources_per_trial={"cpu": 1},
     num_samples=trials_at_a_time,
     resume=resume,
+    callbacks=[
+        WandbLoggerCallback(
+            "tests", entity="mdrc-pacbot", log_config=True, config={"experiment": "pbt"}
+        )
+    ],
 )
