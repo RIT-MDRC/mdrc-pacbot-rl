@@ -12,10 +12,10 @@ import torch
 import torch.nn as nn
 from gymnasium.spaces.discrete import Discrete
 from gymnasium.vector.sync_vector_env import SyncVectorEnv
-import wandb
 from torch.distributions import Categorical
 from tqdm import tqdm
 
+import wandb
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.pacman.gym import PacmanGym
 from mdrc_pacbot_rl.utils import copy_params, get_img_size, init_orthogonal
@@ -237,7 +237,7 @@ for _ in tqdm(range(iterations), position=0):
                     break
             avg_entropy /= steps_taken
             entropy_total += avg_entropy
-    
+
     wandb.log(
         {
             "avg_eval_episode_reward": reward_total / eval_steps,

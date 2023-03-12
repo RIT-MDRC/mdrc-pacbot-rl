@@ -82,8 +82,8 @@ import torch.nn as nn
 from gym.envs.classic_control.cartpole import CartPoleEnv
 from torch.distributions import Categorical
 from tqdm import tqdm
-import wandb
 
+import wandb
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.utils import copy_params, init_orthogonal
 
@@ -120,6 +120,7 @@ wandb.init(
         "p_lr": p_lr,
     },
 )
+
 
 # The value network takes in an observation and returns a single value, the
 # predicted return
