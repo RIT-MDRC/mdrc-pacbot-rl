@@ -3,8 +3,11 @@ from typing import Tuple
 import numpy as np
 import pytest
 
-from mdrc_pacbot_rl.pacman.gym import (BasePacmanGym, NaivePacmanGym,
-                                       SemanticChannelPacmanGym)
+from mdrc_pacbot_rl.pacman.gym import (
+    BasePacmanGym,
+    NaivePacmanGym,
+    SemanticChannelPacmanGym,
+)
 
 
 class TestNaivePacmanGym:
