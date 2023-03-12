@@ -17,7 +17,7 @@ from torch.distributions import Categorical
 from tqdm import tqdm
 
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
-from mdrc_pacbot_rl.pacman.gym import PacmanGym
+from mdrc_pacbot_rl.pacman.gym import NaivePacmanGym as PacmanGym
 from mdrc_pacbot_rl.utils import copy_params, get_img_size, init_orthogonal
 
 _: Any
@@ -219,6 +219,7 @@ for _ in tqdm(range(iterations), position=0):
     with torch.no_grad():
         # Visualize
         reward_total = 0
+        score_total = 0
         entropy_total = 0.0
         eval_obs = torch.Tensor(test_env.reset()[0])
         for _ in range(eval_steps):
@@ -237,10 +238,12 @@ for _ in tqdm(range(iterations), position=0):
                     break
             avg_entropy /= steps_taken
             entropy_total += avg_entropy
+            score_total += test_env.score()
 
     wandb.log(
         {
             "avg_eval_episode_reward": reward_total / eval_steps,
+            "avg_eval_episode_score": score_total / eval_steps,
             "avg_eval_entropy": entropy_total / eval_steps,
             "avg_v_loss": total_v_loss / train_iters,
             "avg_p_loss": total_p_loss / train_iters,
