@@ -226,9 +226,11 @@ for _ in tqdm(range(iterations), position=0):
         for _ in range(eval_steps):
             avg_entropy = 0.0
             steps_taken = 0
+            score = 0
             for _ in range(max_eval_steps):
                 distr = Categorical(logits=p_net(eval_obs.unsqueeze(0)).squeeze())
                 action = distr.sample().item()
+                score = test_env.score()
                 obs_, reward, eval_done, _, _ = test_env.step(action)
                 eval_obs = torch.Tensor(obs_)
                 steps_taken += 1
@@ -239,7 +241,7 @@ for _ in tqdm(range(iterations), position=0):
                     break
             avg_entropy /= steps_taken
             entropy_total += avg_entropy
-            score_total += test_env.score()
+            score_total += score
 
     wandb.log(
         {

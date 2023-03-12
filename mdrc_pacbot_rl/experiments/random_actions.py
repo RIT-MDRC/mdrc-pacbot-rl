@@ -26,13 +26,15 @@ for _ in tqdm(range(iterations)):
     total_reward = 0.0
     total_score = 0
     for _ in range(eval_steps):
+        score = 0
         for _ in range(max_eval_steps):
             action = action_space.sample()
+            score = env.score()
             obs, reward, done, _, _ = env.step(action)
             total_reward += reward
             if done:
                 break
-        total_score += env.score()
+        total_score += score
         obs = env.reset()
         done = False
     wandb.log(
