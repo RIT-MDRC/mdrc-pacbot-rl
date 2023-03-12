@@ -79,8 +79,8 @@ from typing import Any
 import envpool  # type: ignore
 import torch
 import torch.nn as nn
+import wandb
 from gym.envs.classic_control.cartpole import CartPoleEnv
-from matplotlib import pyplot as plt  # type: ignore
 from torch.distributions import Categorical
 from tqdm import tqdm
 
@@ -102,6 +102,24 @@ max_eval_steps = 500
 v_lr = 0.01
 p_lr = 0.001
 device = torch.device("cpu")
+
+wandb.init(
+    project="tests",
+    entity="mdrc-pacbot",
+    config={
+        "experiment": "ppo",
+        "num_envs": num_envs,
+        "train_steps": train_steps,
+        "train_iters": train_iters,
+        "train_batch_size": train_batch_size,
+        "discount": discount,
+        "lambda": lambda_,
+        "epsilon": epsilon,
+        "max_eval_steps": max_eval_steps,
+        "v_lr": v_lr,
+        "p_lr": p_lr,
+    },
+)
 
 
 # The value network takes in an observation and returns a single value, the
@@ -149,9 +167,7 @@ class PolicyNet(nn.Module):
 
 
 env = envpool.make("CartPole-v1", "gym", num_envs=num_envs)
-test_env = CartPoleEnv(render_mode="human")
-reward_totals = []
-entropies = []
+test_env = CartPoleEnv()
 
 # Initialize policy and value networks
 obs_space = env.observation_space
@@ -195,6 +211,8 @@ for _ in tqdm(range(iterations), position=0):
     v_net.train()
     copy_params(p_net, p_net_old)
 
+    total_v_loss = 0.0
+    total_p_loss = 0.0
     for _ in range(train_iters):
         # The rollout buffer provides randomized minibatches of samples
         batches = buffer.samples(train_batch_size, discount, lambda_, v_net)
@@ -244,6 +262,7 @@ for _ in tqdm(range(iterations), position=0):
             p_loss = -term1.min(term2).mean()
             p_loss.backward()
             p_opt.step()
+            total_p_loss += p_loss.item()
 
             # Train value network. Hopefully, this part is much easier to
             # understand.
@@ -252,6 +271,7 @@ for _ in tqdm(range(iterations), position=0):
             v_loss = (diff * diff).mean()
             v_loss.backward()
             v_opt.step()
+            total_v_loss += v_loss.item()
 
     p_net.eval()
     v_net.eval()
@@ -289,17 +309,18 @@ for _ in tqdm(range(iterations), position=0):
                 avg_entropy += distr.entropy()
             avg_entropy /= steps_taken
             entropy_total += avg_entropy
-        reward_totals.append(reward_total / eval_steps)
-        entropies.append(entropy_total / eval_steps)
+
+    wandb.log(
+        {
+            "avg_eval_episode_reward": reward_total / eval_steps,
+            "avg_eval_entropy": entropy_total / eval_steps,
+            "avg_v_loss": total_v_loss / train_iters,
+            "avg_p_loss": total_p_loss / train_iters,
+        }
+    )
+
     obs = torch.Tensor(env.reset()[0])
     done = False
-
-figure, axis = plt.subplots(2, 1)
-axis[0].plot(reward_totals)
-axis[0].set_title("eval reward")
-axis[1].plot(entropies)
-axis[1].set_title("entropy")
-plt.show()
 
 # Congrats! You now know how to write the same exact algorithm OpenAI uses in
 # their own work! Next stop: https://openai.com/careers

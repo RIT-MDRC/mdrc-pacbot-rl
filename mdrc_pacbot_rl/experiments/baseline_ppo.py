@@ -10,9 +10,9 @@ from typing import Any
 
 import torch
 import torch.nn as nn
+import wandb
 from gymnasium.spaces.discrete import Discrete
 from gymnasium.vector.sync_vector_env import SyncVectorEnv
-from matplotlib import pyplot as plt  # type: ignore
 from torch.distributions import Categorical
 from tqdm import tqdm
 
@@ -23,31 +23,54 @@ from mdrc_pacbot_rl.utils import copy_params, get_img_size, init_orthogonal
 _: Any
 
 # Hyperparameters
-num_envs = 128
-train_steps = 100
-iterations = 10
-train_iters = 2
-train_batch_size = 512
-discount = 0.95
-lambda_ = 0.95
-epsilon = 0.2
-max_eval_steps = 100
-v_lr = 0.001
-p_lr = 0.0001
+num_envs = 128  # Number of environments to step through at once during sampling.
+train_steps = 200  # Number of steps to step through during sampling. Total # of samples is train_steps * num_envs/
+iterations = 400  # Number of sample/train iterations.
+train_iters = 2  # Number of passes over the samples collected.
+train_batch_size = 512  # Minibatch size while training models.
+discount = 0.9  # Discount factor applied to rewards.
+lambda_ = 0.95  # Lambda for GAE.
+epsilon = 0.2  # Epsilon for importance sample clipping.
+eval_steps = 8  # Number of eval runs to average over.
+max_eval_steps = 300  # Max number of steps to take during each eval run.
+v_lr = 0.001  # Learning rate of the value net.
+p_lr = 0.0001  # Learning rate of the policy net.
 device = torch.device("cpu")
+
+wandb.init(
+    project="pacbot",
+    entity="mdrc-pacbot",
+    config={
+        "experiment": "baseline ppo",
+        "num_envs": num_envs,
+        "train_steps": train_steps,
+        "train_iters": train_iters,
+        "train_batch_size": train_batch_size,
+        "discount": discount,
+        "lambda": lambda_,
+        "epsilon": epsilon,
+        "max_eval_steps": max_eval_steps,
+        "v_lr": v_lr,
+        "p_lr": p_lr,
+    },
+)
+
+v_net_artifact = wandb.Artifact("v_net", "model")
+p_net_artifact = wandb.Artifact("p_net", "model")
 
 
 class ValueNet(nn.Module):
     def __init__(self, obs_shape: torch.Size):
         nn.Module.__init__(self)
         w, h = obs_shape[1:]
-        self.cnn1 = nn.Conv2d(obs_shape[0], 8, 3)
+        self.cnn1 = nn.Conv2d(obs_shape[0], 4, 3, 2)
         h, w = get_img_size(h, w, self.cnn1)
-        self.cnn2 = nn.Conv2d(8, 12, 3)
+        self.cnn2 = nn.Conv2d(4, 8, 3, 2)
         h, w = get_img_size(h, w, self.cnn2)
         flat_dim = h * w * self.cnn2.out_channels
-        self.v_layer1 = nn.Linear(flat_dim, 512)
-        self.v_layer2 = nn.Linear(512, 1)
+        self.v_layer1 = nn.Linear(flat_dim, 256)
+        self.v_layer2 = nn.Linear(256, 256)
+        self.v_layer3 = nn.Linear(256, 1)
         self.relu = nn.ReLU()
         init_orthogonal(self)
 
@@ -60,6 +83,8 @@ class ValueNet(nn.Module):
         x = self.v_layer1(x)
         x = self.relu(x)
         x = self.v_layer2(x)
+        x = self.relu(x)
+        x = self.v_layer3(x)
         return x
 
 
@@ -67,13 +92,14 @@ class PolicyNet(nn.Module):
     def __init__(self, obs_shape: torch.Size, action_count: int):
         nn.Module.__init__(self)
         w, h = obs_shape[1:]
-        self.cnn1 = nn.Conv2d(obs_shape[0], 8, 3)
+        self.cnn1 = nn.Conv2d(obs_shape[0], 4, 3, 2)
         h, w = get_img_size(h, w, self.cnn1)
-        self.cnn2 = nn.Conv2d(8, 12, 3)
+        self.cnn2 = nn.Conv2d(4, 8, 3, 2)
         h, w = get_img_size(h, w, self.cnn2)
         flat_dim = h * w * self.cnn2.out_channels
-        self.a_layer1 = nn.Linear(flat_dim, 512)
-        self.a_layer2 = nn.Linear(512, action_count)
+        self.a_layer1 = nn.Linear(flat_dim, 256)
+        self.a_layer2 = nn.Linear(256, 256)
+        self.a_layer3 = nn.Linear(256, action_count)
         self.relu = nn.ReLU()
         self.logits = nn.LogSoftmax(1)
         init_orthogonal(self)
@@ -87,14 +113,14 @@ class PolicyNet(nn.Module):
         x = self.a_layer1(x)
         x = self.relu(x)
         x = self.a_layer2(x)
+        x = self.relu(x)
+        x = self.a_layer3(x)
         x = self.logits(x)
         return x
 
 
 env = SyncVectorEnv([lambda: PacmanGym(random_start=True)] * num_envs)
 test_env = PacmanGym(random_start=True)
-reward_totals = []
-entropies = []
 
 # If evaluating, just run the eval env
 if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
@@ -120,14 +146,9 @@ obs_size = torch.Size(obs_shape)
 act_space = env.envs[0].action_space
 if not isinstance(act_space, Discrete):
     raise RuntimeError("Action space was not discrete")
-if len(sys.argv) >= 2 and sys.argv[1] == "--resume":
-    v_net = torch.load("temp/VNet.pt")
-    p_net = torch.load("temp/PNet.pt")
-    p_net_old = torch.load("temp/PNet.pt")
-else:
-    v_net = ValueNet(torch.Size(obs_shape))
-    p_net = PolicyNet(obs_size, int(act_space.n))
-    p_net_old = PolicyNet(obs_size, int(act_space.n))
+v_net = ValueNet(torch.Size(obs_shape))
+p_net = PolicyNet(obs_size, int(act_space.n))
+p_net_old = PolicyNet(obs_size, int(act_space.n))
 p_net_old.eval()
 v_opt = torch.optim.Adam(v_net.parameters(), lr=v_lr)
 p_opt = torch.optim.Adam(p_net.parameters(), lr=p_lr)
@@ -158,6 +179,8 @@ for _ in tqdm(range(iterations), position=0):
     v_net.train()
     copy_params(p_net, p_net_old)
 
+    total_v_loss = 0.0
+    total_p_loss = 0.0
     for _ in tqdm(range(train_iters), position=1):
         batches = buffer.samples(train_batch_size, discount, lambda_, v_net)
         for prev_states, _, actions, _, rewards_to_go, advantages, _ in batches:
@@ -177,6 +200,7 @@ for _ in tqdm(range(iterations), position=0):
             p_loss = -term1.min(term2).mean()
             p_loss.backward()
             p_opt.step()
+            total_p_loss += p_loss.item()
 
             # Train value network
             v_opt.zero_grad()
@@ -184,6 +208,7 @@ for _ in tqdm(range(iterations), position=0):
             v_loss = (diff * diff).mean()
             v_loss.backward()
             v_opt.step()
+            total_v_loss += v_loss.item()
 
     p_net.eval()
     v_net.eval()
@@ -196,7 +221,6 @@ for _ in tqdm(range(iterations), position=0):
         reward_total = 0
         entropy_total = 0.0
         eval_obs = torch.Tensor(test_env.reset()[0])
-        eval_steps = 4
         for _ in range(eval_steps):
             avg_entropy = 0.0
             steps_taken = 0
@@ -213,15 +237,23 @@ for _ in tqdm(range(iterations), position=0):
                     break
             avg_entropy /= steps_taken
             entropy_total += avg_entropy
-        reward_totals.append(reward_total / eval_steps)
-        entropies.append(entropy_total / eval_steps)
 
+    wandb.log(
+        {
+            "avg_eval_episode_reward": reward_total / eval_steps,
+            "avg_eval_entropy": entropy_total / eval_steps,
+            "avg_v_loss": total_v_loss / train_iters,
+            "avg_p_loss": total_p_loss / train_iters,
+        }
+    )
+
+# Save artifacts
 torch.save(v_net, "temp/VNet.pt")
-torch.save(p_net, "temp/PNet.pt")
+v_net_artifact.add_file("temp/VNet.pt")
+wandb.log_artifact(v_net_artifact)
 
-figure, axis = plt.subplots(2, 1)
-axis[0].plot(reward_totals)
-axis[0].set_title("eval reward")
-axis[1].plot(entropies)
-axis[1].set_title("entropy")
-plt.show()
+torch.save(p_net, "temp/PNet.pt")
+p_net_artifact.add_file("temp/PNet.pt")
+wandb.log_artifact(p_net_artifact, "temp/PNet.pt")
+
+wandb.finish()
