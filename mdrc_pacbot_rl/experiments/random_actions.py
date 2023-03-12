@@ -2,10 +2,10 @@
 Experiment where the agent performs random actions.
 """
 import torch.nn as nn
+import wandb
 from matplotlib import pyplot as plt  # type: ignore
 from tqdm import tqdm
 
-import wandb
 from mdrc_pacbot_rl.pacman.gym import PacmanGym
 
 max_eval_steps = 300
