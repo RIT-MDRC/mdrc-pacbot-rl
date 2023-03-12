@@ -1,9 +1,10 @@
 """
-Baseline for PPO on Pacman gym.
+Experiment for testing if separating observation into more semantically
+meaningful layers (obstacle, reward, self, ghost) helps.
 
 CLI Args:
-    --eval: Run the last saved policy in the test environment, with visualization.
-    --resume: Resume training from the last saved policy.
+    --eval: Run the last saved policy in the test environment, with
+    visualization.
 """
 import sys
 from typing import Any
@@ -17,7 +18,7 @@ from torch.distributions import Categorical
 from tqdm import tqdm
 
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
-from mdrc_pacbot_rl.pacman.gym import NaivePacmanGym as PacmanGym
+from mdrc_pacbot_rl.pacman.gym import SemanticChannelPacmanGym as PacmanGym
 from mdrc_pacbot_rl.utils import copy_params, get_img_size, init_orthogonal
 
 _: Any
@@ -41,7 +42,7 @@ wandb.init(
     project="pacbot",
     entity="mdrc-pacbot",
     config={
-        "experiment": "baseline ppo",
+        "experiment": "semantic channel ppo",
         "num_envs": num_envs,
         "train_steps": train_steps,
         "train_iters": train_iters,
@@ -119,7 +120,7 @@ class PolicyNet(nn.Module):
         return x
 
 
-env = SyncVectorEnv([lambda: PacmanGym(random_start=True)] * num_envs)
+env = SyncVectorEnv([lambda: PacmanGym(random_start=True) for _ in range(num_envs)])
 test_env = PacmanGym(random_start=True)
 
 # If evaluating, just run the eval env
