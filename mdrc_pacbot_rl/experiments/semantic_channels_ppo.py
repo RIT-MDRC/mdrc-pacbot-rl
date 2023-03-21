@@ -220,6 +220,7 @@ for _ in tqdm(range(iterations), position=0):
     with torch.no_grad():
         # Visualize
         reward_total = 0
+        pred_reward_total = 0
         score_total = 0
         entropy_total = 0.0
         eval_obs = torch.Tensor(test_env.reset()[0])
@@ -231,6 +232,7 @@ for _ in tqdm(range(iterations), position=0):
                 distr = Categorical(logits=p_net(eval_obs.unsqueeze(0)).squeeze())
                 action = distr.sample().item()
                 score = test_env.score()
+                pred_reward_total += v_net(eval_obs.unsqueeze(0)).squeeze().item()
                 obs_, reward, eval_done, _, _ = test_env.step(action)
                 eval_obs = torch.Tensor(obs_)
                 steps_taken += 1
@@ -246,6 +248,7 @@ for _ in tqdm(range(iterations), position=0):
     wandb.log(
         {
             "avg_eval_episode_reward": reward_total / eval_steps,
+            "avg_eval_episode_predicted_reward": pred_reward_total / eval_steps,
             "avg_eval_episode_score": score_total / eval_steps,
             "avg_eval_entropy": entropy_total / eval_steps,
             "avg_v_loss": total_v_loss / train_iters,

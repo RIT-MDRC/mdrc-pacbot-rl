@@ -1,9 +1,10 @@
 """
-Baseline for PPO on Pacman gym.
+Experiment for testing if ghost variety can inhibit learning if not accounted
+for.
 
 CLI Args:
-    --eval: Run the last saved policy in the test environment, with visualization.
-    --resume: Resume training from the last saved policy.
+    --eval: Run the last saved policy in the test environment, with
+    visualization.
 """
 import sys
 from typing import Any
@@ -17,7 +18,7 @@ from torch.distributions import Categorical
 from tqdm import tqdm
 
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
-from mdrc_pacbot_rl.pacman.gym import NaivePacmanGym as PacmanGym
+from mdrc_pacbot_rl.pacman.gym import SingleGhostPacmanGym as PacmanGym
 from mdrc_pacbot_rl.utils import copy_params, get_img_size, init_orthogonal
 
 _: Any
@@ -41,7 +42,7 @@ wandb.init(
     project="pacbot",
     entity="mdrc-pacbot",
     config={
-        "experiment": "baseline ppo",
+        "experiment": "single ghost ppo",
         "num_envs": num_envs,
         "train_steps": train_steps,
         "train_iters": train_iters,
@@ -92,9 +93,9 @@ class PolicyNet(nn.Module):
     def __init__(self, obs_shape: torch.Size, action_count: int):
         nn.Module.__init__(self)
         w, h = obs_shape[1:]
-        self.cnn1 = nn.Conv2d(obs_shape[0], 8, 3, 2)
+        self.cnn1 = nn.Conv2d(obs_shape[0], 4, 3, 2)
         h, w = get_img_size(h, w, self.cnn1)
-        self.cnn2 = nn.Conv2d(8, 16, 3, 2)
+        self.cnn2 = nn.Conv2d(4, 8, 3, 2)
         h, w = get_img_size(h, w, self.cnn2)
         flat_dim = h * w * self.cnn2.out_channels
         self.a_layer1 = nn.Linear(flat_dim, 256)
@@ -118,8 +119,7 @@ class PolicyNet(nn.Module):
         x = self.logits(x)
         return x
 
-
-env = SyncVectorEnv([lambda: PacmanGym(random_start=True)] * num_envs)
+env = SyncVectorEnv([lambda: PacmanGym(random_start=True) for _ in range(num_envs)])
 test_env = PacmanGym(random_start=True)
 
 # If evaluating, just run the eval env
@@ -133,7 +133,6 @@ if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
             action = distr.sample().item()
             obs_, reward, done, _, _ = test_env.step(action)
             obs = torch.Tensor(obs_)
-            print(reward)
             if done:
                 break
     quit()
