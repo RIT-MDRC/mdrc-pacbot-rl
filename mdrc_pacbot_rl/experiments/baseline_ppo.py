@@ -10,12 +10,12 @@ from typing import Any
 
 import torch
 import torch.nn as nn
-import wandb
 from gymnasium.spaces.discrete import Discrete
 from gymnasium.vector.sync_vector_env import SyncVectorEnv
 from torch.distributions import Categorical
 from tqdm import tqdm
 
+import wandb
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.pacman.gym import NaivePacmanGym as PacmanGym
 from mdrc_pacbot_rl.utils import copy_params, get_img_size, init_orthogonal
@@ -92,9 +92,9 @@ class PolicyNet(nn.Module):
     def __init__(self, obs_shape: torch.Size, action_count: int):
         nn.Module.__init__(self)
         w, h = obs_shape[1:]
-        self.cnn1 = nn.Conv2d(obs_shape[0], 8, 3, 2)
+        self.cnn1 = nn.Conv2d(obs_shape[0], 4, 3, 2)
         h, w = get_img_size(h, w, self.cnn1)
-        self.cnn2 = nn.Conv2d(8, 16, 3, 2)
+        self.cnn2 = nn.Conv2d(4, 8, 3, 2)
         h, w = get_img_size(h, w, self.cnn2)
         flat_dim = h * w * self.cnn2.out_channels
         self.a_layer1 = nn.Linear(flat_dim, 256)
