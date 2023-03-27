@@ -1,3 +1,6 @@
+pub mod game_state;
+pub mod ghost_agent;
+pub mod ghost_paths;
 pub mod grid;
 pub mod pacbot;
 pub mod variables;

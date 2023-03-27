@@ -9,5 +9,7 @@ name = "pacbot_rs"
 crate-type = ["cdylib"]
 
 [dependencies]
+arrayvec = "0.7.2"
 num_enum = "0.5.11"
 pyo3 = "0.18.1"
+rand = "0.8.5"
