@@ -167,6 +167,7 @@ p_opt = torch.optim.Adam(p_net.parameters(), lr=p_lr)
 buffer = RolloutBuffer(
     obs_size,
     torch.Size((1,)),
+    torch.Size((4,)),
     torch.int,
     num_envs,
     train_steps,
@@ -178,10 +179,16 @@ for _ in tqdm(range(iterations), position=0):
     # Collect experience
     with torch.no_grad():
         for _ in tqdm(range(train_steps), position=1):
-            actions = Categorical(logits=p_net(obs)).sample().numpy()
-            obs_, rewards, dones, _, _ = env.step(actions)
+            action_probs = p_net(obs)
+            actions = Categorical(logits=action_probs).sample().numpy()
+            obs_, rewards, dones, truncs, _ = env.step(actions)
             buffer.insert_step(
-                obs, torch.from_numpy(actions).unsqueeze(-1), rewards, dones
+                obs,
+                torch.from_numpy(actions).unsqueeze(-1),
+                action_probs,
+                rewards,
+                dones,
+                truncs,
             )
             obs = torch.from_numpy(obs_)
         buffer.insert_final_step(obs)
@@ -195,7 +202,7 @@ for _ in tqdm(range(iterations), position=0):
     total_p_loss = 0.0
     for _ in tqdm(range(train_iters), position=1):
         batches = buffer.samples(train_batch_size, discount, lambda_, v_net)
-        for prev_states, _, actions, _, rewards_to_go, advantages, _ in batches:
+        for prev_states, actions, action_probs, returns, advantages in batches:
             # Train policy network
             with torch.no_grad():
                 old_log_probs = p_net_old(prev_states)
@@ -216,7 +223,7 @@ for _ in tqdm(range(iterations), position=0):
 
             # Train value network
             v_opt.zero_grad()
-            diff: torch.Tensor = v_net(prev_states) - rewards_to_go.unsqueeze(1)
+            diff: torch.Tensor = v_net(prev_states) - returns.unsqueeze(1)
             v_loss = (diff * diff).mean()
             v_loss.backward()
             v_opt.step()
@@ -244,12 +251,12 @@ for _ in tqdm(range(iterations), position=0):
                 action = distr.sample().item()
                 score = test_env.score()
                 pred_reward_total += v_net(eval_obs.unsqueeze(0)).squeeze().item()
-                obs_, reward, eval_done, _, _ = test_env.step(action)
+                obs_, reward, eval_done, eval_trunc, _ = test_env.step(action)
                 eval_obs = torch.Tensor(obs_)
                 steps_taken += 1
                 reward_total += reward
                 avg_entropy += distr.entropy()
-                if eval_done:
+                if eval_done or eval_trunc:
                     eval_obs = torch.Tensor(test_env.reset()[0])
                     break
             avg_entropy /= steps_taken

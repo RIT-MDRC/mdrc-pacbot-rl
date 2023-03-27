@@ -446,7 +446,7 @@ class SingleGhostPacmanGym(BasePacmanGym):
 
         self.handle_rendering()
 
-        return self.create_obs(), reward, done, {}, {}
+        return self.create_obs(), reward, done, False, {}
 
     def create_obs(self):
         grid = np.array(self.game_state.grid)
