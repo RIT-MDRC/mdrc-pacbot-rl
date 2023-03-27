@@ -148,12 +148,13 @@ class GetAllPelletsEnv(BaseMicroGym):
         obs = np.stack([self.grid, self.pellets, pacman])
 
         done = self.pellets.sum() == 0
+        trunc = False
         if self.update_timer():
-            done = True
+            trunc = True
 
         self.handle_rendering()
 
-        return obs, reward, done, {}, {}
+        return obs, reward, done, trunc, {}
 
     def reset(self):
         super().reset()
@@ -225,12 +226,13 @@ class RunAwayEnv(BaseMicroGym):
         ghost[self.ghost_pos[0]][self.ghost_pos[1]] = 1
         obs = np.stack([self.grid, ghost, pacman])
 
+        trunc = False
         if self.update_timer():
-            done = True
+            trunc = True
 
         self.handle_rendering()
 
-        return obs, reward, done, {}, {}
+        return obs, reward, done, trunc, {}
 
     def reset(self):
         super().reset()
@@ -306,12 +308,13 @@ class CollectAndRunEnv(BaseMicroGym):
         ghost[self.ghost_pos[0]][self.ghost_pos[1]] = 1
         obs = np.stack([self.grid, ghost, pacman, self.pellets])
 
+        trunc = False
         if self.update_timer():
-            done = True
+            trunc = True
 
         self.handle_rendering()
 
-        return obs, reward, done, {}, {}
+        return obs, reward, done, trunc, {}
 
     def reset(self):
         super().reset()

@@ -107,6 +107,7 @@ def run(config: dict):
     buffer = RolloutBuffer(
         obs_space.shape,
         torch.Size((1,)),
+        torch.Size((4,)),
         torch.int,
         num_envs,
         train_steps,
@@ -133,10 +134,16 @@ def run(config: dict):
         # Collect experience for a number of steps and store it in the buffer
         with torch.no_grad():
             for _ in range(train_steps):
-                actions = Categorical(logits=p_net(obs)).sample().numpy()
-                obs_, rewards, dones, _, _ = env.step(actions)
+                action_probs = p_net(obs)
+                actions = Categorical(logits=action_probs).sample().numpy()
+                obs_, rewards, dones, truncs, _ = env.step(actions)
                 buffer.insert_step(
-                    obs, torch.from_numpy(actions).unsqueeze(-1), rewards, dones
+                    obs,
+                    torch.from_numpy(actions).unsqueeze(-1),
+                    action_probs,
+                    rewards,
+                    dones,
+                    truncs,
                 )
                 obs = torch.from_numpy(obs_)
                 if done:
@@ -154,7 +161,7 @@ def run(config: dict):
         for _ in range(train_iters):
             # The rollout buffer provides randomized minibatches of samples
             batches = buffer.samples(train_batch_size, discount, lambda_, v_net)
-            for prev_states, _, actions, _, rewards_to_go, advantages, _ in batches:
+            for prev_states, actions, action_probs, returns, advantages in batches:
                 # Train policy network
                 with torch.no_grad():
                     old_log_probs = p_net_old(prev_states)
@@ -175,7 +182,7 @@ def run(config: dict):
 
                 # Train value network
                 v_opt.zero_grad()
-                diff: torch.Tensor = v_net(prev_states) - rewards_to_go.unsqueeze(1)
+                diff: torch.Tensor = v_net(prev_states) - returns.unsqueeze(1)
                 v_loss = (diff * diff).mean()
                 v_loss.backward()
                 v_opt.step()

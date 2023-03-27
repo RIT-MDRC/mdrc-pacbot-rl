@@ -18,7 +18,7 @@ from tqdm import tqdm
 
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.micro_envs import GetAllPelletsEnv
-from mdrc_pacbot_rl.utils import copy_params, get_img_size, init_orthogonal
+from mdrc_pacbot_rl.utils import get_img_size, init_orthogonal
 
 _: Any
 
@@ -147,13 +147,12 @@ if not isinstance(act_space, Discrete):
     raise RuntimeError("Action space was not discrete")
 v_net = ValueNet(torch.Size(obs_shape))
 p_net = PolicyNet(obs_size, int(act_space.n))
-p_net_old = PolicyNet(obs_size, int(act_space.n))
-p_net_old.eval()
 v_opt = torch.optim.Adam(v_net.parameters(), lr=v_lr)
 p_opt = torch.optim.Adam(p_net.parameters(), lr=p_lr)
 buffer = RolloutBuffer(
     obs_size,
     torch.Size((1,)),
+    torch.Size((int(act_space.n),)),
     torch.int,
     num_envs,
     train_steps,
@@ -165,10 +164,16 @@ for _ in tqdm(range(iterations), position=0):
     # Collect experience
     with torch.no_grad():
         for _ in tqdm(range(train_steps), position=1):
-            actions = Categorical(logits=p_net(obs)).sample().numpy()
-            obs_, rewards, dones, _, _ = env.step(actions)
+            action_probs = p_net(obs)
+            actions = Categorical(logits=action_probs).sample().numpy()
+            obs_, rewards, dones, truncs, _ = env.step(actions)
             buffer.insert_step(
-                obs, torch.from_numpy(actions).unsqueeze(-1), rewards, dones
+                obs,
+                torch.from_numpy(actions).unsqueeze(-1),
+                action_probs,
+                rewards,
+                dones,
+                truncs,
             )
             obs = torch.from_numpy(obs_)
         buffer.insert_final_step(obs)
@@ -176,17 +181,15 @@ for _ in tqdm(range(iterations), position=0):
     # Train
     p_net.train()
     v_net.train()
-    copy_params(p_net, p_net_old)
 
     total_v_loss = 0.0
     total_p_loss = 0.0
     for _ in tqdm(range(train_iters), position=1):
         batches = buffer.samples(train_batch_size, discount, lambda_, v_net)
-        for prev_states, _, actions, _, rewards_to_go, advantages, _ in batches:
+        for prev_states, actions, action_probs, returns, advantages in batches:
             # Train policy network
             with torch.no_grad():
-                old_log_probs = p_net_old(prev_states)
-                old_act_probs = Categorical(logits=old_log_probs).log_prob(
+                old_act_probs = Categorical(logits=action_probs).log_prob(
                     actions.squeeze()
                 )
             p_opt.zero_grad()
@@ -203,7 +206,7 @@ for _ in tqdm(range(iterations), position=0):
 
             # Train value network
             v_opt.zero_grad()
-            diff: torch.Tensor = v_net(prev_states) - rewards_to_go
+            diff: torch.Tensor = v_net(prev_states) - returns
             v_loss = (diff * diff).mean()
             v_loss.backward()
             v_opt.step()
@@ -229,12 +232,12 @@ for _ in tqdm(range(iterations), position=0):
                 distr = Categorical(logits=p_net(eval_obs.unsqueeze(0)).squeeze())
                 action = distr.sample().item()
                 pred_reward_total += v_net(eval_obs.unsqueeze(0)).squeeze().item()
-                obs_, reward, eval_done, _, _ = test_env.step(action)
+                obs_, reward, eval_done, eval_trunc, _ = test_env.step(action)
                 eval_obs = torch.Tensor(obs_)
                 steps_taken += 1
                 reward_total += reward
                 avg_entropy += distr.entropy()
-                if eval_done:
+                if eval_done or eval_trunc:
                     eval_obs = torch.Tensor(test_env.reset()[0])
                     break
             avg_entropy /= steps_taken
