@@ -79,11 +79,11 @@ from typing import Any
 import envpool  # type: ignore
 import torch
 import torch.nn as nn
+import wandb
 from gym.envs.classic_control.cartpole import CartPoleEnv
 from torch.distributions import Categorical
 from tqdm import tqdm
 
-import wandb
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.utils import copy_params, init_orthogonal
 

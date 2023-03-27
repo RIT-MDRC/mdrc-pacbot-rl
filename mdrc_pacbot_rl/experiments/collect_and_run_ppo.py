@@ -10,12 +10,12 @@ from typing import Any
 
 import torch
 import torch.nn as nn
+import wandb
 from gymnasium.spaces.discrete import Discrete
 from gymnasium.vector.sync_vector_env import SyncVectorEnv
 from torch.distributions import Categorical
 from tqdm import tqdm
 
-import wandb
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.micro_envs import CollectAndRunEnv
 from mdrc_pacbot_rl.utils import copy_params, get_img_size, init_orthogonal
