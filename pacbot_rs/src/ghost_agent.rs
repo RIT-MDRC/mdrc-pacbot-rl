@@ -29,7 +29,7 @@ pub struct GhostAgent {
     scatter_pos: (isize, isize),
     pub frightened_counter: u32,
     pub current_pos: (usize, usize),
-    next_pos: (usize, usize),
+    pub next_pos: (usize, usize),
     direction: Direction,
 }
 
@@ -70,7 +70,7 @@ impl GhostAgent {
         if self.is_move_legal((x + 1, y), game_state) {
             possible.push((x + 1, y));
         }
-        if self.is_move_legal((x, y + 1), game_state) && GHOST_NO_UP_TILES.contains(&(x, y)) {
+        if self.is_move_legal((x, y + 1), game_state) && !GHOST_NO_UP_TILES.contains(&(x, y)) {
             possible.push((x, y + 1));
         }
         if self.is_move_legal((x - 1, y), game_state) {
@@ -103,15 +103,17 @@ impl GhostAgent {
     /// This is awful. Look online to find out blue is supposed to move, and let's just work under the
     /// assumption that this function returns that sort of move.
     fn get_next_blue_chase_move(&self, game_state: &GameState) -> ((usize, usize), Direction) {
+        let pacbot_x = game_state.pacbot.pos.0 as isize;
+        let pacbot_y = game_state.pacbot.pos.1 as isize;
         let pacbot_target = match game_state.pacbot.direction {
-            Up => (game_state.pacbot.pos.0 - 2, game_state.pacbot.pos.1 + 2),
-            Down => (game_state.pacbot.pos.0, game_state.pacbot.pos.1 - 2),
-            Left => (game_state.pacbot.pos.0 - 2, game_state.pacbot.pos.1),
-            Right => (game_state.pacbot.pos.0 + 2, game_state.pacbot.pos.1),
+            Up => (pacbot_x - 2, pacbot_y + 2),
+            Down => (pacbot_x, pacbot_y - 2),
+            Left => (pacbot_x - 2, pacbot_y),
+            Right => (pacbot_x + 2, pacbot_y),
         };
         let red_pos = game_state.red.borrow().current_pos;
-        let x = pacbot_target.0 + (pacbot_target.0 - red_pos.0);
-        let y = pacbot_target.1 + (pacbot_target.1 - red_pos.1);
+        let x = pacbot_target.0 + (pacbot_target.0 - red_pos.0 as isize);
+        let y = pacbot_target.1 + (pacbot_target.1 - red_pos.1 as isize);
 
         self.get_move_based_on_target((x, y), game_state)
     }
@@ -121,11 +123,13 @@ impl GhostAgent {
     /// the original game and return the move closest to the space 4 tiles above and
     /// 4 tiles to the left of Pacman.
     fn get_next_pink_chase_move(&self, game_state: &GameState) -> ((usize, usize), Direction) {
+        let pacbot_x = game_state.pacbot.pos.0 as isize;
+        let pacbot_y = game_state.pacbot.pos.1 as isize;
         let target_pos = match game_state.pacbot.direction {
-            Up => (game_state.pacbot.pos.0 - 4, game_state.pacbot.pos.1 + 4),
-            Down => (game_state.pacbot.pos.0, game_state.pacbot.pos.1 - 4),
-            Left => (game_state.pacbot.pos.0 - 4, game_state.pacbot.pos.1),
-            Right => (game_state.pacbot.pos.0 + 4, game_state.pacbot.pos.1),
+            Up => (pacbot_x - 4, pacbot_y + 4),
+            Down => (pacbot_x, pacbot_y - 4),
+            Left => (pacbot_x - 4, pacbot_y),
+            Right => (pacbot_x + 4, pacbot_y),
         };
 
         self.get_move_based_on_target(target_pos, game_state)

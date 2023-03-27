@@ -1,6 +1,9 @@
+mod py_wrappers;
+
 use std::cell::RefCell;
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use pyo3::prelude::*;
 
 use crate::{
     ghost_agent::{GhostAgent, GhostColor},
@@ -13,6 +16,8 @@ use crate::{
     },
 };
 
+use self::py_wrappers::{wrap_ghost_agent, wrap_grid, wrap_pacbot};
+
 const FREQUENCY: f32 = GAME_FREQUENCY * TICKS_PER_UPDATE as f32;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, IntoPrimitive, TryFromPrimitive)]
@@ -23,6 +28,7 @@ pub enum GameStateState {
     Frightened = 3,
 }
 
+#[pyclass]
 pub struct GameState {
     pub pacbot: PacBot,
 
@@ -35,8 +41,11 @@ pub struct GameState {
 
     pub grid: [[GridValue; 31]; 28],
 
+    #[pyo3(get)]
     pellets: u32,
+    #[pyo3(get)]
     power_pellets: u32,
+    #[pyo3(get)]
     cherry: bool,
     prev_cherry_pellets: u32,
     old_state: GameStateState,
@@ -44,16 +53,56 @@ pub struct GameState {
     pub just_swapped_state: bool,
     frightened_counter: u32,
     frightened_multiplier: u32,
+    #[pyo3(get)]
     score: u32,
+    #[pyo3(get)]
     play: bool,
     pub start_counter: u32,
     state_counter: u32,
     update_ticks: u32,
+    #[pyo3(get)]
     lives: u8,
     ticks_since_spawn: u32,
 }
 
+#[pymethods]
 impl GameState {
+    #[getter]
+    fn pacbot(self_: Py<GameState>) -> impl IntoPy<Py<PyAny>> {
+        wrap_pacbot(self_)
+    }
+
+    #[getter]
+    fn red(self_: Py<GameState>) -> impl IntoPy<Py<PyAny>> {
+        wrap_ghost_agent(self_, |game_state| &game_state.red)
+    }
+
+    #[getter]
+    fn pink(self_: Py<GameState>) -> impl IntoPy<Py<PyAny>> {
+        wrap_ghost_agent(self_, |game_state| &game_state.pink)
+    }
+
+    #[getter]
+    fn orange(self_: Py<GameState>) -> impl IntoPy<Py<PyAny>> {
+        wrap_ghost_agent(self_, |game_state| &game_state.orange)
+    }
+
+    #[getter]
+    fn blue(self_: Py<GameState>) -> impl IntoPy<Py<PyAny>> {
+        wrap_ghost_agent(self_, |game_state| &game_state.blue)
+    }
+
+    #[getter]
+    fn grid(self_: Py<GameState>) -> impl IntoPy<Py<PyAny>> {
+        wrap_grid(self_)
+    }
+
+    /// Returns whether the current state is frightened.
+    fn is_frightened(&self) -> bool {
+        self.state == GameStateState::Frightened
+    }
+
+    #[new]
     pub fn new() -> Self {
         let mut game_state = Self {
             pacbot: PacBot::new(),
@@ -112,6 +161,86 @@ impl GameState {
         game_state
     }
 
+    pub fn pause(&mut self) {
+        self.play = false;
+    }
+
+    pub fn unpause(&mut self) {
+        self.play = true;
+    }
+
+    pub fn print_ghost_pos(&self) {
+        let ghosts = [&self.red, &self.pink, &self.blue, &self.orange];
+        let ghost_strings = ghosts.map(|g| format!("{:?}", g.borrow().current_pos));
+        println!("{}", ghost_strings.join(" "));
+    }
+
+    pub fn next_step(&mut self) {
+        if self.is_game_over() {
+            self.end_game();
+        }
+        if self.should_die() {
+            self.die();
+        } else {
+            self.check_if_ghosts_eaten();
+            if self.update_ticks % TICKS_PER_UPDATE == 0 {
+                self.update_ghosts();
+                self.check_if_ghosts_eaten();
+                if self.state == GameStateState::Frightened {
+                    if self.frightened_counter == 1 {
+                        self.end_frightened();
+                    } else if self.frightened_counter == FRIGHTENED_LENGTH {
+                        self.just_swapped_state = false;
+                    }
+                    self.frightened_counter -= 1;
+                } else {
+                    self.swap_state_if_necessary();
+                    self.state_counter += 1;
+                }
+                self.start_counter += 1;
+                // self.print_ghost_pos();
+            }
+            self.update_score();
+            if self.should_spawn_cherry() {
+                self.spawn_cherry();
+            }
+            if self.cherry {
+                self.ticks_since_spawn += 1;
+            }
+            if self.should_remove_cherry() {
+                self.despawn_cherry();
+            }
+            self.update_ticks += 1;
+        }
+    }
+
+    /// Sets the game back to its original state (no rounds played).
+    pub fn restart(&mut self) {
+        self.grid = GRID;
+        self.pellets = GRID_PELLET_COUNT;
+        self.power_pellets = GRID_POWER_PELLET_COUNT;
+        self.cherry = false;
+        self.prev_cherry_pellets = 0;
+        self.old_state = GameStateState::Chase;
+        self.state = GameStateState::Scatter;
+        self.just_swapped_state = false;
+        self.frightened_counter = 0;
+        self.frightened_multiplier = 1;
+        self.respawn_agents();
+        self.score = 0;
+        self.play = false;
+        self.start_counter = 0;
+        self.state_counter = 0;
+        self.update_ticks = 0;
+        self.lives = STARTING_LIVES;
+        self.update_score();
+        self.grid[CHERRY_POS.0][CHERRY_POS.1] = GridValue::e;
+        self.ticks_since_spawn = 0;
+    }
+}
+
+// separate impl block for private functions not exposed to Python
+impl GameState {
     /// Frightens all of the ghosts and saves the old state to be restored when frightened mode ends.
     fn become_frightened(&mut self) {
         if self.state != GameStateState::Frightened {
@@ -300,83 +429,6 @@ impl GameState {
         } else {
             self.just_swapped_state = false;
         }
-    }
-
-    pub fn pause(&mut self) {
-        self.play = false;
-    }
-
-    pub fn unpause(&mut self) {
-        self.play = true;
-    }
-
-    pub fn print_ghost_pos(&self) {
-        let ghosts = [&self.red, &self.pink, &self.blue, &self.orange];
-        let ghost_strings = ghosts.map(|g| format!("{:?}", g.borrow().current_pos));
-        println!("{}", ghost_strings.join(" "));
-    }
-
-    pub fn next_step(&mut self) {
-        if self.is_game_over() {
-            self.end_game();
-        }
-        if self.should_die() {
-            self.die();
-        } else {
-            self.check_if_ghosts_eaten();
-            if self.update_ticks % TICKS_PER_UPDATE == 0 {
-                self.update_ghosts();
-                self.check_if_ghosts_eaten();
-                if self.state == GameStateState::Frightened {
-                    if self.frightened_counter == 1 {
-                        self.end_frightened();
-                    } else if self.frightened_counter == FRIGHTENED_LENGTH {
-                        self.just_swapped_state = false;
-                    }
-                    self.frightened_counter -= 1;
-                } else {
-                    self.swap_state_if_necessary();
-                    self.state_counter += 1;
-                }
-                self.start_counter += 1;
-                // self.print_ghost_pos();
-            }
-            self.update_score();
-            if self.should_spawn_cherry() {
-                self.spawn_cherry();
-            }
-            if self.cherry {
-                self.ticks_since_spawn += 1;
-            }
-            if self.should_remove_cherry() {
-                self.despawn_cherry();
-            }
-            self.update_ticks += 1;
-        }
-    }
-
-    /// Sets the game back to its original state (no rounds played).
-    pub fn restart(&mut self) {
-        self.grid = GRID;
-        self.pellets = GRID_PELLET_COUNT;
-        self.power_pellets = GRID_POWER_PELLET_COUNT;
-        self.cherry = false;
-        self.prev_cherry_pellets = 0;
-        self.old_state = GameStateState::Chase;
-        self.state = GameStateState::Scatter;
-        self.just_swapped_state = false;
-        self.frightened_counter = 0;
-        self.frightened_multiplier = 1;
-        self.respawn_agents();
-        self.score = 0;
-        self.play = false;
-        self.start_counter = 0;
-        self.state_counter = 0;
-        self.update_ticks = 0;
-        self.lives = STARTING_LIVES;
-        self.update_score();
-        self.grid[CHERRY_POS.0][CHERRY_POS.1] = GridValue::e;
-        self.ticks_since_spawn = 0;
     }
 }
 
