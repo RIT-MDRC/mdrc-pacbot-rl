@@ -36,17 +36,15 @@ sig_restart = 2
 */
 
 // game params
-// pub const starting_lives = 3;
+pub const STARTING_LIVES: u8 = 3;
 pub const FRIGHTENED_LENGTH: u32 = 40;
-// pub const pellet_score = 10;
-// pub const power_pellet_score = 50;
-// pub const cherry_score = 100;
-// pub const ghost_score = 200;
-// pub const state_swap_times = [35, 135, 170, 270, 295, 395, 420];
+pub const PELLET_SCORE: u32 = 10;
+pub const POWER_PELLET_SCORE: u32 = 50;
+pub const CHERRY_SCORE: u32 = 100;
+pub const GHOST_SCORE: u32 = 200;
+pub const STATE_SWAP_TIMES: [u32; 7] = [35, 135, 170, 270, 295, 395, 420];
 pub const PACBOT_STARTING_POS: (usize, usize) = (14, 7);
 pub const PACBOT_STARTING_DIR: Direction = Direction::Left;
-/*
-cherry_pos = (13, 13)
-game_frequency = 2.0
-ticks_per_update = 12
-*/
+pub const CHERRY_POS: (usize, usize) = (13, 13);
+pub const GAME_FREQUENCY: f32 = 2.0;
+pub const TICKS_PER_UPDATE: u32 = 12;

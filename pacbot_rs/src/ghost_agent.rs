@@ -26,9 +26,9 @@ pub struct GhostAgent {
     init_moves: ((usize, usize), (usize, usize)),
     respawn_counter: usize,
     start_path: &'static [((usize, usize), Direction)],
-    scatter_pos: (usize, usize),
-    frightened_counter: u32,
-    current_pos: (usize, usize),
+    scatter_pos: (isize, isize),
+    pub frightened_counter: u32,
+    pub current_pos: (usize, usize),
     next_pos: (usize, usize),
     direction: Direction,
 }
@@ -39,7 +39,7 @@ impl GhostAgent {
         color: GhostColor,
         init_direction: Direction,
         start_path: &'static [((usize, usize), Direction)],
-        scatter_pos: (usize, usize),
+        scatter_pos: (isize, isize),
     ) -> Self {
         Self {
             // The color of the ghost determines its movement behavior.
@@ -109,8 +109,9 @@ impl GhostAgent {
             Left => (game_state.pacbot.pos.0 - 2, game_state.pacbot.pos.1),
             Right => (game_state.pacbot.pos.0 + 2, game_state.pacbot.pos.1),
         };
-        let x = pacbot_target.0 + (pacbot_target.0 - game_state.red.current_pos.0);
-        let y = pacbot_target.1 + (pacbot_target.1 - game_state.red.current_pos.1);
+        let red_pos = game_state.red.borrow().current_pos;
+        let x = pacbot_target.0 + (pacbot_target.0 - red_pos.0);
+        let y = pacbot_target.1 + (pacbot_target.1 - red_pos.1);
 
         self.get_move_based_on_target((x, y), game_state)
     }
@@ -148,9 +149,9 @@ impl GhostAgent {
 
     /// Moves to the tile that is the closest to the target by straight-line distance,
     /// NOT the tile that is the closest to the target by optimal tile path length.
-    fn get_move_based_on_target(
+    fn get_move_based_on_target<T: AsISize>(
         &self,
-        target_pos: (usize, usize),
+        target_pos: (T, T),
         game_state: &GameState,
     ) -> ((usize, usize), Direction) {
         let min_move = self
@@ -207,7 +208,7 @@ impl GhostAgent {
     /// Returns true if a round has just started; in this case, the ghost should follow
     /// its predefined starting path.
     fn should_follow_starting_path(&self, game_state: &GameState) -> bool {
-        game_state.start_counter < self.start_path.len()
+        (game_state.start_counter as usize) < self.start_path.len()
     }
 
     /// Returns true if the ghost has just respawned and should follow the predefined
@@ -221,7 +222,7 @@ impl GhostAgent {
     /// or if the ghost should be acting normally.
     fn decide_next_moves(&mut self, game_state: &GameState) -> ((usize, usize), Direction) {
         if self.should_follow_starting_path(game_state) {
-            self.start_path[game_state.start_counter]
+            self.start_path[game_state.start_counter as usize]
         } else if self.should_follow_respawn_path() {
             self.respawn_counter += 1;
             RESPAWN_PATH[self.respawn_counter - 1]
@@ -276,8 +277,21 @@ impl GhostAgent {
     }
 }
 
-fn squared_euclidian_distance(pos1: (usize, usize), pos2: (usize, usize)) -> usize {
-    let dx = pos1.0 as isize - pos2.0 as isize;
-    let dy = pos1.1 as isize - pos2.1 as isize;
+trait AsISize: Copy {
+    fn as_isize(self) -> isize;
+}
+impl AsISize for isize {
+    fn as_isize(self) -> isize {
+        self
+    }
+}
+impl AsISize for usize {
+    fn as_isize(self) -> isize {
+        self as isize
+    }
+}
+fn squared_euclidian_distance<T1: AsISize, T2: AsISize>(pos1: (T1, T1), pos2: (T2, T2)) -> usize {
+    let dx = pos1.0.as_isize() - pos2.0.as_isize();
+    let dy = pos1.1.as_isize() - pos2.1.as_isize();
     (dx * dx + dy * dy) as usize
 }
