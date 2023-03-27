@@ -1,9 +1,10 @@
 """
-Experiment to see if CoordConv helps with performance.
-CoordConv blogpost: https://www.uber.com/blog/coordconv/
+Experiment for testing if ghost variety can inhibit learning if not accounted
+for.
 
 CLI Args:
-    --eval: Run the last saved policy in the test environment, with visualization.
+    --eval: Run the last saved policy in the test environment, with
+    visualization.
 """
 import sys
 from typing import Any
@@ -17,17 +18,17 @@ from torch.distributions import Categorical
 from tqdm import tqdm
 
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
-from mdrc_pacbot_rl.pacman.gym import NaivePacmanGym as PacmanGym
+from mdrc_pacbot_rl.pacman.gym import SingleGhostPacmanGym as PacmanGym
 from mdrc_pacbot_rl.utils import copy_params, get_img_size, init_orthogonal
 
 _: Any
 
 # Hyperparameters
-num_envs = 128  # Number of environments to step through at once during sampling.
-train_steps = 200  # Number of steps to step through during sampling. Total # of samples is train_steps * num_envs/
-iterations = 400  # Number of sample/train iterations.
-train_iters = 2  # Number of passes over the samples collected.
-train_batch_size = 512  # Minibatch size while training models.
+num_envs = 64  # Number of environments to step through at once during sampling.
+train_steps = 200  # Number of steps to step through during sampling. Total # of samples is train_steps * num_envs
+iterations = 1000  # Number of sample/train iterations.
+train_iters = 1  # Number of passes over the samples collected.
+train_batch_size = 2048  # Minibatch size while training models.
 discount = 0.9  # Discount factor applied to rewards.
 lambda_ = 0.95  # Lambda for GAE.
 epsilon = 0.2  # Epsilon for importance sample clipping.
@@ -41,7 +42,7 @@ wandb.init(
     project="pacbot",
     entity="mdrc-pacbot",
     config={
-        "experiment": "coordconv ppo",
+        "experiment": "single ghost ppo",
         "num_envs": num_envs,
         "train_steps": train_steps,
         "train_iters": train_iters,
@@ -63,12 +64,9 @@ class ValueNet(nn.Module):
     def __init__(self, obs_shape: torch.Size):
         nn.Module.__init__(self)
         w, h = obs_shape[1:]
-        width_pos = torch.arange(0, w).repeat(h, 1).T
-        height_pos = torch.arange(0, h).repeat(w, 1)
-        self.pos = torch.stack([width_pos, height_pos])
-        self.cnn1 = nn.Conv2d(obs_shape[0] + 2, 4, 3, 2)
+        self.cnn1 = nn.Conv2d(obs_shape[0], 32, 3, 2)
         h, w = get_img_size(h, w, self.cnn1)
-        self.cnn2 = nn.Conv2d(4, 8, 3, 2)
+        self.cnn2 = nn.Conv2d(32, 64, 3)
         h, w = get_img_size(h, w, self.cnn2)
         flat_dim = h * w * self.cnn2.out_channels
         self.v_layer1 = nn.Linear(flat_dim, 256)
@@ -78,9 +76,6 @@ class ValueNet(nn.Module):
         init_orthogonal(self)
 
     def forward(self, input: torch.Tensor):
-        batch_size = input.shape[0]
-        positional = self.pos.repeat((batch_size, 1, 1, 1))
-        input = torch.concat([input, positional], 1)
         x = self.cnn1(input)
         x = self.relu(x)
         x = self.cnn2(x)
@@ -98,12 +93,9 @@ class PolicyNet(nn.Module):
     def __init__(self, obs_shape: torch.Size, action_count: int):
         nn.Module.__init__(self)
         w, h = obs_shape[1:]
-        width_pos = torch.arange(0, w).repeat(h, 1).T
-        height_pos = torch.arange(0, h).repeat(w, 1)
-        self.pos = torch.stack([width_pos, height_pos])
-        self.cnn1 = nn.Conv2d(obs_shape[0] + 2, 4, 3, 2)
+        self.cnn1 = nn.Conv2d(obs_shape[0], 32, 3)
         h, w = get_img_size(h, w, self.cnn1)
-        self.cnn2 = nn.Conv2d(4, 8, 3, 2)
+        self.cnn2 = nn.Conv2d(32, 64, 3, 2)
         h, w = get_img_size(h, w, self.cnn2)
         flat_dim = h * w * self.cnn2.out_channels
         self.a_layer1 = nn.Linear(flat_dim, 256)
@@ -114,9 +106,6 @@ class PolicyNet(nn.Module):
         init_orthogonal(self)
 
     def forward(self, input: torch.Tensor):
-        batch_size = input.shape[0]
-        positional = self.pos.repeat((batch_size, 1, 1, 1))
-        input = torch.concat([input, positional], 1)
         x = self.cnn1(input)
         x = self.relu(x)
         x = self.cnn2(x)
@@ -131,7 +120,7 @@ class PolicyNet(nn.Module):
         return x
 
 
-env = SyncVectorEnv([lambda: PacmanGym(random_start=True)] * num_envs)
+env = SyncVectorEnv([lambda: PacmanGym(random_start=True) for _ in range(num_envs)])
 test_env = PacmanGym(random_start=True)
 
 # If evaluating, just run the eval env
@@ -145,7 +134,6 @@ if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
             action = distr.sample().item()
             obs_, reward, done, _, _ = test_env.step(action)
             obs = torch.Tensor(obs_)
-            print(reward)
             if done:
                 break
     quit()
@@ -216,7 +204,7 @@ for _ in tqdm(range(iterations), position=0):
 
             # Train value network
             v_opt.zero_grad()
-            diff: torch.Tensor = v_net(prev_states) - rewards_to_go.unsqueeze(1)
+            diff: torch.Tensor = v_net(prev_states) - rewards_to_go
             v_loss = (diff * diff).mean()
             v_loss.backward()
             v_opt.step()
