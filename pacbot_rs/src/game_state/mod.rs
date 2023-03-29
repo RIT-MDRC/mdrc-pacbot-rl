@@ -111,7 +111,7 @@ impl GameState {
     }
 
     /// Returns whether the current state is frightened.
-    fn is_frightened(&self) -> bool {
+    pub fn is_frightened(&self) -> bool {
         self.state == GameStateState::Frightened
     }
 
