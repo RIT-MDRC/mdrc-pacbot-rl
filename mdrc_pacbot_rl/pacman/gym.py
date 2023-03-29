@@ -234,7 +234,7 @@ class NaivePacmanGym(BasePacmanGym):
 
     def create_obs(self):
         fright = self.game_state.is_frightened()
-        grid = np.array(self.game_state.grid)
+        grid = np.asarray(self.game_state.grid)
         entities = np.zeros(grid.shape)
         # Add entities
         entity_positions = [
@@ -340,7 +340,7 @@ class SemanticChannelPacmanGym(BasePacmanGym):
         return self.create_obs(), reward, done, {}, {}
 
     def create_obs(self):
-        grid = np.array(self.game_state.grid)
+        grid = np.asarray(self.game_state.grid)
         wall = np.where(grid == 1, 1, 0)
 
         fright = self.game_state.is_frightened()
@@ -494,7 +494,7 @@ class SemanticPacmanGym(BasePacmanGym):
         pellet_embed = np.zeros(embed_dim)
         for pos in super_pellet_locs:
             x, y = pos
-            if self.game_state.grid[x][y] == 4:
+            if self.game_state.grid[x][y] == variables.O:
                 pellet_embed += node_embeddings[coords_to_node[pos]]
 
         is_frightened = self.game_state.is_frightened()
@@ -511,7 +511,7 @@ class SemanticPacmanGym(BasePacmanGym):
             ]
         )
 
-        grid = np.array(self.game_state.grid)
+        grid = np.asarray(self.game_state.grid)
         wall = np.where(grid == 1, 1, 0)
 
         fright = self.game_state.is_frightened()
