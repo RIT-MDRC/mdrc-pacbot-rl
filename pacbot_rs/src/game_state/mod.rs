@@ -41,10 +41,13 @@ pub struct GameState {
 
     pub grid: [[GridValue; 31]; 28],
 
+    /// The number of remaining (regular) pellets on the grid.
     #[pyo3(get)]
     pellets: u32,
+    /// The number of remaining power pellets on the grid.
     #[pyo3(get)]
     power_pellets: u32,
+    /// Whether the cherry is currently on the grid.
     #[pyo3(get)]
     cherry: bool,
     prev_cherry_pellets: u32,
@@ -53,13 +56,16 @@ pub struct GameState {
     pub just_swapped_state: bool,
     frightened_counter: u32,
     frightened_multiplier: u32,
+    /// The current score.
     #[pyo3(get)]
     score: u32,
+    /// Whether the game is currently playing (not paused/ended).
     #[pyo3(get)]
     play: bool,
     pub start_counter: u32,
     state_counter: u32,
     update_ticks: u32,
+    /// The number of remaining lives.
     #[pyo3(get)]
     lives: u8,
     ticks_since_spawn: u32,
@@ -67,31 +73,38 @@ pub struct GameState {
 
 #[pymethods]
 impl GameState {
+    /// The PacBot.
     #[getter]
     fn pacbot(self_: Py<GameState>) -> impl IntoPy<Py<PyAny>> {
         wrap_pacbot(self_)
     }
 
+    /// The red ghost.
     #[getter]
     fn red(self_: Py<GameState>) -> impl IntoPy<Py<PyAny>> {
         wrap_ghost_agent(self_, |game_state| &game_state.red)
     }
 
+    /// The pink ghost.
     #[getter]
     fn pink(self_: Py<GameState>) -> impl IntoPy<Py<PyAny>> {
         wrap_ghost_agent(self_, |game_state| &game_state.pink)
     }
 
+    /// The orange ghost.
     #[getter]
     fn orange(self_: Py<GameState>) -> impl IntoPy<Py<PyAny>> {
         wrap_ghost_agent(self_, |game_state| &game_state.orange)
     }
 
+    /// The blue ghost.
     #[getter]
     fn blue(self_: Py<GameState>) -> impl IntoPy<Py<PyAny>> {
         wrap_ghost_agent(self_, |game_state| &game_state.blue)
     }
 
+    /// The grid of tiles.
+    /// Can be viewed as a NumPy array with np.asarray(...).
     #[getter]
     fn grid(self_: Py<GameState>) -> impl IntoPy<Py<PyAny>> {
         wrap_grid(self_)
