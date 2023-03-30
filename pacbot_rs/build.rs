@@ -5,6 +5,7 @@ use std::env;
 use std::fmt::Debug;
 use std::fs;
 use std::io;
+use std::io::BufWriter;
 use std::io::Write;
 use std::path::Path;
 
@@ -44,10 +45,10 @@ fn output_array<T: npyz::Deserialize + Debug, P: AsRef<Path>>(
     let shape = array.shape().to_owned();
     let strides = array.strides().to_owned();
     let data = array.into_vec::<T>()?;
-    let mut out_file = fs::File::create(out_path)?;
+    let mut out_file = BufWriter::new(fs::File::create(out_path)?);
 
-    fn output_subarray<T: Debug>(
-        out_file: &mut fs::File,
+    fn output_subarray<T: Debug, W: Write>(
+        out_file: &mut W,
         data: &[T],
         shape: &[u64],
         strides: &[u64],
@@ -67,7 +68,8 @@ fn output_array<T: npyz::Deserialize + Debug, P: AsRef<Path>>(
         }
     }
 
-    output_subarray(&mut out_file, &data, &shape, &strides)
+    output_subarray(&mut out_file, &data, &shape, &strides)?;
+    out_file.flush()
 }
 
 fn main() -> io::Result<()> {
