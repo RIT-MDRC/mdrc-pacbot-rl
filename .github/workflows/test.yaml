@@ -2,10 +2,11 @@ name: test
 on: [push]
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: rust-latest
     steps:
     - uses: actions/checkout@v2
     - uses: snok/install-poetry@v1
     - run: |
         poetry install
+        maturin develop
         poetry run pytest tests

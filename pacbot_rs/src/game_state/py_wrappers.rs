@@ -182,7 +182,7 @@ pub(super) fn wrap_grid(game_state: Py<GameState>) -> impl IntoPy<Py<PyAny>> {
     GridWrapper { game_state }
 }
 
-/// Wraps a reference to a GameState's grid.
+/// Wraps a reference to a GameState's PacBot.
 #[pyclass]
 struct PacBotWrapper {
     game_state: Py<GameState>,
