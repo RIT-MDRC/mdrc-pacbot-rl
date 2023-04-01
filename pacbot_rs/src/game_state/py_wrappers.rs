@@ -32,6 +32,15 @@ impl GhostAgentWrapper {
             get_ghost: self.get_ghost,
         }
     }
+
+    fn clear_start_path(&mut self) -> PyResult<()> {
+        Python::with_gil(|py| {
+            let game_state = self.game_state.borrow(py);
+            let mut ghost = (self.get_ghost)(&game_state).borrow_mut();
+            ghost.start_path = &[];
+            Ok(())
+        })
+    }
 }
 
 /// Wraps a reference to one of a ghost's positions.

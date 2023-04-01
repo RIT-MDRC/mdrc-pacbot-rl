@@ -1,6 +1,7 @@
 from typing import Literal, Mapping
 
 class GhostAgent:
+    def clear_start_path(self) -> None: ...
     @property
     def pos(self) -> Mapping[Literal["current", "next"], tuple[int, int]]: ...
 

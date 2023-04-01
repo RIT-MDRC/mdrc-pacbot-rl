@@ -54,10 +54,10 @@ class BasePacmanGym(gym.Env):
         self.random_start = random_start
 
         if random_start:
-            self.game_state.red.start_path = []
-            self.game_state.pink.start_path = []
-            self.game_state.orange.start_path = []
-            self.game_state.blue.start_path = []
+            self.game_state.red.clear_start_path()
+            self.game_state.pink.clear_start_path()
+            self.game_state.orange.clear_start_path()
+            self.game_state.blue.clear_start_path()
 
         self.valid_cells = VALID_CELLS
 

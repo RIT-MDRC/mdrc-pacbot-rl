@@ -19,6 +19,9 @@ class GhostAgent:
         self.scatter_pos = scatter_pos
         self.frightened_counter = 0
 
+    def clear_start_path(self):
+        self.start_path = []
+
     def _is_move_legal(self, move):
         return (
             move != self.pos["current"]

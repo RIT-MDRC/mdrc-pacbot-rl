@@ -25,7 +25,7 @@ pub struct GhostAgent {
     init_direction: Direction,
     init_moves: ((usize, usize), (usize, usize)),
     respawn_counter: usize,
-    start_path: &'static [((usize, usize), Direction)],
+    pub start_path: &'static [((usize, usize), Direction)],
     scatter_pos: (isize, isize),
     pub frightened_counter: u32,
     pub current_pos: (usize, usize),
