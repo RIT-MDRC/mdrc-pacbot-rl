@@ -1,7 +1,7 @@
+import json
 import math
 import random
 from pathlib import Path
-import json
 
 import gymnasium as gym
 import numpy as np
@@ -9,7 +9,6 @@ import pygame
 from gymnasium.spaces import Box, Discrete
 
 from mdrc_pacbot_rl.pacman import variables
-
 from pacbot_rs import GameState
 
 GRID_WIDTH = 28

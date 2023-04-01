@@ -5,19 +5,19 @@ CLI Args:
     --eval: Run the last saved policy in the test environment, with visualization.
     --resume: Resume training from the last saved policy.
 """
+import json
 import sys
+from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
-import json
 import wandb
 from gymnasium.spaces.discrete import Discrete
 from gymnasium.vector.sync_vector_env import SyncVectorEnv
 from torch.distributions import Categorical
 from tqdm import tqdm
-from pathlib import Path
 
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.pacman.gym import SemanticPacmanGym as PacmanGym
