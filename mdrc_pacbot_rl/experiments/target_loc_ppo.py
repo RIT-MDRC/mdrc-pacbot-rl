@@ -151,39 +151,6 @@ class PolicyNet(nn.Module):
         #     print()
         return action_probs
 
-        # convert target_query to action probabilities
-        if False:
-            target_probs = nn.functional.softmax(
-                target_query @ node_embeddings.T, dim=-1
-            )
-            action_probs = torch.matmul(
-                target_probs.unsqueeze(1), action_distributions[cur_loc_node_indices]
-            ).squeeze(1)
-        else:
-            # target_query = -input[:, embed_dim:]
-            target_logits = target_query @ node_embeddings.T
-            if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
-                import matplotlib.pyplot as plt
-
-                def node_values_to_grid(values, fill_value=0.0):
-                    """Converts an array of node values to a grid for visualization."""
-                    grid = np.full((28, 31), fill_value)
-                    for i, (x, y) in enumerate(node_to_coords):
-                        grid[x, y] = values[i]
-                    return grid.T
-
-                plt.matshow(
-                    node_values_to_grid(target_logits.numpy(force=True).squeeze(axis=0))
-                )
-                plt.colorbar()
-                plt.show()
-            action_logits = torch.matmul(
-                target_logits.unsqueeze(1), action_distributions[cur_loc_node_indices]
-            ).squeeze(1)
-            action_logits[action_logits == 0] = float("-inf")
-            action_probs = nn.functional.softmax(action_logits, dim=-1)
-        return action_probs
-
 
 env = SyncVectorEnv([lambda: PacmanGym(random_start=True)] * num_envs)
 test_env = PacmanGym(random_start=True)
@@ -243,6 +210,7 @@ p_opt = torch.optim.Adam(p_net.parameters(), lr=p_lr)
 buffer = RolloutBuffer(
     obs_size,
     torch.Size((1,)),
+    torch.Size((5,)),
     torch.int,
     num_envs,
     train_steps,
@@ -254,10 +222,16 @@ for _ in tqdm(range(iterations), position=0):
     # Collect experience
     with torch.no_grad():
         for _ in tqdm(range(train_steps), position=1):
-            actions = Categorical(probs=p_net(obs)).sample().numpy()
-            obs_, rewards, dones, _, _ = env.step(actions)
+            action_probs = p_net(obs)
+            actions = Categorical(logits=action_probs).sample().numpy()
+            obs_, rewards, dones, truncs, _ = env.step(actions)
             buffer.insert_step(
-                obs, torch.from_numpy(actions).unsqueeze(-1), rewards, dones
+                obs,
+                torch.from_numpy(actions).unsqueeze(-1),
+                action_probs,
+                rewards,
+                dones,
+                truncs,
             )
             obs = torch.from_numpy(obs_)
         buffer.insert_final_step(obs)
@@ -271,7 +245,7 @@ for _ in tqdm(range(iterations), position=0):
     total_p_loss = 0.0
     for _ in tqdm(range(train_iters), position=1):
         batches = buffer.samples(train_batch_size, discount, lambda_, v_net)
-        for prev_states, _, actions, _, rewards_to_go, advantages, _ in batches:
+        for prev_states, actions, action_probs, returns, advantages in batches:
             # print(prev_states.shape, rewards_to_go.shape)
             # print(list(make_input_from_obs(prev_states)[0][:, -1].numpy()))
             # print(list(rewards_to_go.squeeze(axis=-1).numpy()))
@@ -294,7 +268,7 @@ for _ in tqdm(range(iterations), position=0):
             # Train value network
             v_opt.zero_grad()
             val_pred = v_net(prev_states)
-            val_target = rewards_to_go  # .unsqueeze(1)
+            val_target = returns  # .unsqueeze(1)
             # diff: torch.Tensor = v_net(prev_states) - rewards_to_go.unsqueeze(1)
             # v_loss = (diff * diff).mean()
             v_loss = nn.functional.mse_loss(val_pred, val_target)
