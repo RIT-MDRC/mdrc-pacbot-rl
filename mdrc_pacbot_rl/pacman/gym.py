@@ -510,36 +510,3 @@ class SemanticPacmanGym(BasePacmanGym):
                 extra_info,
             ]
         )
-
-        grid = np.asarray(self.game_state.grid)
-        wall = np.where(grid == 1, 1, 0)
-
-        fright = self.game_state.is_frightened()
-        entity_positions = [
-            self.game_state.red.pos["current"],
-            self.game_state.pink.pos["current"],
-            self.game_state.orange.pos["current"],
-            self.game_state.blue.pos["current"],
-        ]
-        ghost = np.zeros(grid.shape)
-        for i, pos in enumerate(entity_positions):
-            ghost[pos[0]][pos[1]] = (i + 1) / 4
-
-        last_ghost = np.zeros(grid.shape)
-        for i, pos in enumerate(self.last_ghost_pos):
-            last_ghost[pos[0]][pos[1]] = (i + 1) / 4
-
-        fright_ghost = np.where(ghost > 0, 1, 0) * int(fright)
-        reward = (
-            np.where(grid == 2, 1, 0) * variables.pellet_score
-            + np.where(grid == 6, 1, 0) * variables.cherry_score
-            + np.where(grid == 4, 1, 0) * variables.power_pellet_score
-            + fright_ghost * variables.ghost_score
-        ) / variables.ghost_score
-
-        pac_pos = self.game_state.pacbot.pos
-        pacman = np.zeros(grid.shape)
-        pacman[pac_pos[0]][pac_pos[1]] = 1
-
-        obs = np.stack([wall, reward, pacman, ghost, last_ghost])
-        return obs
