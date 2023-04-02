@@ -232,10 +232,13 @@ class NaivePacmanGym(BasePacmanGym):
             random_start: If Pacman should start on a random cell.
             ticks_per_step: How many ticks the game should move every step. Ghosts move every 12 ticks.
         """
-        self.observation_space = Box(-1.0, 5.0, (2, GRID_WIDTH, GRID_HEIGHT))
+        self.observation_space = Box(0.0, 5.0, (7, GRID_WIDTH, GRID_HEIGHT))
         self.action_space = Discrete(5)
         self.ticks_per_step = ticks_per_step
         BasePacmanGym.__init__(self, random_start, render_mode)
+        grid = np.array(self.game_state.grid)
+        self.entities = np.zeros([4] + list(grid.shape))
+        self.pacman = np.zeros(grid.shape)
 
     def step(self, action):
         # Update Pacman pos
@@ -247,12 +250,11 @@ class NaivePacmanGym(BasePacmanGym):
 
         done = not self.game_state.play
 
-        # Reward is raw difference in game score, or -100 if eaten
-        reward = self.game_state.score - self.last_score
-        if done:
-            reward = -100
+        # Reward is raw difference in game score
+        reward = math.log(1 + self.game_state.score - self.last_score) / math.log(200)
         if reward == float("Nan"):
             reward = 0
+
         self.last_score = self.game_state.score
 
         self.handle_rendering()
@@ -264,8 +266,8 @@ class NaivePacmanGym(BasePacmanGym):
         grid = np.asarray(self.game_state.grid)
         entities = np.zeros(grid.shape)
         # Add entities
+        self.entities *= 0.5
         entity_positions = [
-            self.game_state.pacbot.pos,
             self.game_state.red.pos["current"],
             self.game_state.blue.pos["current"],
             self.game_state.pink.pos["current"],
@@ -276,6 +278,21 @@ class NaivePacmanGym(BasePacmanGym):
             entities[pos[0]][pos[1]] = -1 if fright and i > 0 else i + 1
         obs = np.stack([grid, entities])
         return obs
+        
+    def reset(self):
+        grid = np.array(self.game_state.grid)
+        self.pacman = np.zeros(grid.shape)
+        self.entities = np.zeros([4] + list(grid.shape))
+        entity_positions = [
+            self.game_state.red.pos["current"],
+            self.game_state.blue.pos["current"],
+            self.game_state.pink.pos["current"],
+            self.game_state.orange.pos["current"],
+        ]
+        
+        for i, pos in enumerate(entity_positions):
+            self.entities[i][pos[0]][pos[1]] = 1
+        return super().reset()
 
 
 class SemanticChannelPacmanGym(BasePacmanGym):
