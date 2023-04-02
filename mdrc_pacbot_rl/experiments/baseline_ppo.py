@@ -155,7 +155,7 @@ p_opt = torch.optim.Adam(p_net.parameters(), lr=p_lr)
 buffer = RolloutBuffer(
     obs_size,
     torch.Size((1,)),
-    torch.Size((4,)),
+    torch.Size((5,)),
     torch.int,
     num_envs,
     train_steps,

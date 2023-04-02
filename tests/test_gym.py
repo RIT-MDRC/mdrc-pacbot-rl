@@ -8,7 +8,7 @@ from mdrc_pacbot_rl.pacman.gym import (
     NaivePacmanGym,
     SelfAttentionPacmanGym,
     SemanticChannelPacmanGym,
-    SingleGhostPacmanGym,
+    SemanticPacmanGym,
 )
 
 
@@ -67,8 +67,8 @@ class TestSemanticChannelPacmanGym:
     [
         NaivePacmanGym(),
         SemanticChannelPacmanGym(),
-        SingleGhostPacmanGym(),
         SelfAttentionPacmanGym(),
+        SemanticPacmanGym(),
     ],
 )
 class TestGym:

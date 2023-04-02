@@ -313,3 +313,6 @@ class GameState:
         self._update_score()
         self.grid[cherry_pos[0]][cherry_pos[1]] = e
         self.ticks_since_spawn = 0
+
+    def is_frightened(self) -> bool:
+        return self.state == frightened

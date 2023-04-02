@@ -3,9 +3,14 @@ on: [push]
 jobs:
   test:
     runs-on: ubuntu-latest
+    container: rust:latest
     steps:
     - uses: actions/checkout@v2
     - uses: snok/install-poetry@v1
-    - run: |
-        poetry install
-        poetry run pytest tests
+    - name: Install Poetry dependencies
+      run: poetry install
+    - name: Build Rust module
+      run: poetry run --directory .. -- maturin develop
+      working-directory: ./pacbot_rs
+    - name: Run tests
+      run: poetry run pytest tests

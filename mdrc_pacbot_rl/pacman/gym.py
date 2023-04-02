@@ -1,5 +1,7 @@
+import json
 import math
 import random
+from pathlib import Path
 
 import gymnasium as gym
 import numpy as np
@@ -7,12 +9,28 @@ import pygame
 from gymnasium.spaces import Box, Discrete
 
 from mdrc_pacbot_rl.pacman import variables
-
-from .gameState import GameState
+from pacbot_rs import GameState
 
 GRID_WIDTH = 28
 GRID_HEIGHT = 31
 RENDER_PIXEL_SCALE = 10
+
+
+COMPUTED_DATA_DIR = Path("computed_data")
+
+with (COMPUTED_DATA_DIR / "node_coords.json").open() as f:
+    VALID_CELLS = [tuple(coords) for coords in json.load(f)]
+
+node_embeddings: np.ndarray = np.load(COMPUTED_DATA_DIR / "node_embeddings.npy")
+embed_dim = node_embeddings.shape[1]
+
+with (COMPUTED_DATA_DIR / "node_coords.json").open() as f:
+    node_to_coords = [tuple(coords) for coords in json.load(f)]
+coords_to_node = {coords: i for i, coords in enumerate(node_to_coords)}
+num_nodes = len(node_to_coords)
+
+action_distributions = np.load(COMPUTED_DATA_DIR / "action_distributions.npy")
+valid_actions = (action_distributions != 0).max(axis=1)
 
 
 class BasePacmanGym(gym.Env):
@@ -36,19 +54,12 @@ class BasePacmanGym(gym.Env):
         self.random_start = random_start
 
         if random_start:
-            self.game_state.red.start_path = []
-            self.game_state.pink.start_path = []
-            self.game_state.orange.start_path = []
-            self.game_state.blue.start_path = []
+            self.game_state.red.clear_start_path()
+            self.game_state.pink.clear_start_path()
+            self.game_state.orange.clear_start_path()
+            self.game_state.blue.clear_start_path()
 
-        self.valid_cells = []
-        for x in range(GRID_WIDTH):
-            for y in range(GRID_HEIGHT):
-                # Skip middle of board
-                if (y > 9 and y < GRID_HEIGHT - 5) or y == 27:
-                    continue
-                if self.game_state.grid[x][y] != 1:
-                    self.valid_cells.append((x, y))
+        self.valid_cells = VALID_CELLS
 
         if render_mode == "human":
             pygame.init()
@@ -117,7 +128,7 @@ class BasePacmanGym(gym.Env):
             new_pos = (max(old_pos[0] - 1, 0), old_pos[1])
         if action == 4:
             new_pos = (min(old_pos[0] + 1, GRID_WIDTH - 1), old_pos[1])
-        if self.game_state.grid[new_pos[0]][new_pos[1]] != 1:
+        if self.game_state.grid[new_pos[0]][new_pos[1]] not in (1, 5):
             self.game_state.pacbot.update(new_pos)
 
     def action_mask(self):
@@ -154,7 +165,7 @@ class BasePacmanGym(gym.Env):
         """
         Renders the current game state.
         """
-        fright = self.game_state.state == variables.frightened
+        fright = self.game_state.is_frightened()
         fright_color = (10, 10, 10)
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
@@ -356,10 +367,10 @@ class SemanticChannelPacmanGym(BasePacmanGym):
         return self.create_obs(), reward, done, {}, {}
 
     def create_obs(self):
-        grid = np.array(self.game_state.grid)
+        grid = np.asarray(self.game_state.grid)
         wall = np.where(grid == 1, 1, 0)
 
-        fright = self.game_state.state == variables.frightened
+        fright = self.game_state.is_frightened()
         entity_positions = [
             self.game_state.red.pos["current"],
             self.game_state.pink.pos["current"],
@@ -391,11 +402,13 @@ class SemanticChannelPacmanGym(BasePacmanGym):
         return obs
 
 
-class SingleGhostPacmanGym(BasePacmanGym):
+class SemanticPacmanGym(BasePacmanGym):
     """
-    This environment is almost exactly the same as SemanticChannelPacmanGym. The
-    only difference is that there's only one ghost type, the red ghost. There
-    are still 4 ghosts, though. Also, all ghosts show up as 1 for the ghost channels.
+    This environment's observation space has more semantic meaning. [...]
+
+    Observation: [...]
+    Action: Discrete space of nothing, up, down, left, right.
+    Rewards: Log normalized difference between score after and before action.
     """
 
     def __init__(
@@ -409,24 +422,19 @@ class SingleGhostPacmanGym(BasePacmanGym):
             random_start: If Pacman should start on a random cell.
             ticks_per_step: How many ticks the game should move every step. Ghosts move every 12 ticks.
         """
-        self.observation_space = Box(-1.0, 1.0, (6, GRID_WIDTH, GRID_HEIGHT))
+        self.observation_space = Box(-np.inf, +np.inf, (embed_dim * 3 + 5 + 5 + 2,))
         self.action_space = Discrete(5)
         self.ticks_per_step = ticks_per_step
-        BasePacmanGym.__init__(self, random_start, render_mode)
-        self.game_state.pink.color = variables.red
-        self.game_state.orange.color = variables.red
-        self.game_state.blue.color = variables.red
+        super().__init__(random_start, render_mode)
         self.last_ghost_pos = [
             self.game_state.red.pos["current"],
             self.game_state.pink.pos["current"],
             self.game_state.orange.pos["current"],
             self.game_state.blue.pos["current"],
         ]
-        self.last_pacman_pos = self.game_state.pacbot.pos
 
     def reset(self):
         results = super().reset()
-        self.last_pacman_pos = self.game_state.pacbot.pos
         entity_positions = [
             self.game_state.red.pos["current"],
             self.game_state.pink.pos["current"],
@@ -437,7 +445,6 @@ class SingleGhostPacmanGym(BasePacmanGym):
         return results
 
     def step(self, action):
-        self.last_pacman_pos = self.game_state.pacbot.pos
         self.move_one_cell(action)
 
         entity_positions = [
@@ -465,54 +472,71 @@ class SingleGhostPacmanGym(BasePacmanGym):
 
         done = not self.game_state.play
 
-        # Use log normalized rewards
-        reward = math.log(1 + self.game_state.score - self.last_score) / math.log(200)
+        # # Use log normalized rewards
+        # reward = math.log(1 + self.game_state.score - self.last_score) / math.log(200)
+        reward = self.game_state.score - self.last_score
         if done:
-            reward = -1.0
+            reward = -100
         if reward == float("Nan"):
             reward = 0
+        reward /= 200
         self.last_score = self.game_state.score
 
         self.handle_rendering()
 
-        return self.create_obs(), reward, done, False, {}
+        return self.create_obs(), reward, done, {}, {}
 
     def create_obs(self):
-        grid = np.array(self.game_state.grid)
-        wall = np.where(grid == 1, 1, 0)
+        pacman_node_index = coords_to_node[self.game_state.pacbot.pos]
+        pacman_pos_embed = node_embeddings[pacman_node_index]
 
-        fright = self.game_state.state == variables.frightened
-        entity_positions = [
-            self.game_state.red.pos["current"],
-            self.game_state.pink.pos["current"],
-            self.game_state.orange.pos["current"],
-            self.game_state.blue.pos["current"],
+        ghosts = [
+            self.game_state.red,
+            self.game_state.pink,
+            self.game_state.orange,
+            self.game_state.blue,
         ]
-        ghost = np.zeros(grid.shape)
-        for i, pos in enumerate(entity_positions):
-            ghost[pos[0]][pos[1]] = 1
+        ghost_embed = np.zeros(embed_dim)
+        for ghost in ghosts:
+            pos = ghost.pos["current"]
+            if pos in coords_to_node:
+                ghost_embed += node_embeddings[coords_to_node[pos]]
 
-        last_ghost = np.zeros(grid.shape)
-        for i, pos in enumerate(self.last_ghost_pos):
-            last_ghost[pos[0]][pos[1]] = 1
+        def dist_to_pacman(pos):
+            px, py = self.game_state.pacbot.pos
+            gx, gy = pos
+            return abs(px - gx) + abs(py - gy)
 
-        fright_ghost = np.where(ghost > 0, 1, 0) * int(fright)
-        reward = np.log(
-            1
-            + np.where(grid == 2, 1, 0) * variables.pellet_score
-            + np.where(grid == 6, 1, 0) * variables.cherry_score
-            + np.where(grid == 4, 1, 0) * variables.power_pellet_score
-            + fright_ghost * variables.ghost_score
-        ) / math.log(variables.ghost_score)
+        ghost_positions = [ghost.pos["current"] for ghost in ghosts]
+        ghost_positions = [pos for pos in ghost_positions if pos in coords_to_node]
+        if len(ghost_positions) > 0:
+            closest_ghost_pos = min(ghost_positions, key=dist_to_pacman)
+            closest_ghost_dir = action_distributions[
+                pacman_node_index, coords_to_node[closest_ghost_pos]
+            ]
+        else:
+            closest_ghost_dir = np.zeros(5)
 
-        last_pacman = np.zeros(grid.shape)
-        last_pacman[self.last_pacman_pos[0]][self.last_pacman_pos[1]] = 1
-        pac_pos = self.game_state.pacbot.pos
-        pacman = np.zeros(grid.shape)
-        pacman[pac_pos[0]][pac_pos[1]] = 1
+        super_pellet_locs = [(1, 7), (1, 27), (26, 7), (26, 27)]
+        pellet_embed = np.zeros(embed_dim)
+        for pos in super_pellet_locs:
+            x, y = pos
+            if self.game_state.grid[x][y] == variables.O:
+                pellet_embed += node_embeddings[coords_to_node[pos]]
 
-        obs = np.stack([wall, reward, pacman, last_pacman, ghost, last_ghost])
-        return obs
+        is_frightened = self.game_state.is_frightened()
+        extra_info = [float(is_frightened), pacman_node_index]
+
+        return np.concatenate(
+            [
+                pacman_pos_embed,
+                ghost_embed,
+                pellet_embed,
+                closest_ghost_dir,
+                valid_actions[pacman_node_index],
+                extra_info,
+            ]
+        )
 
 
 class SelfAttentionPacmanGym(BasePacmanGym):
