@@ -4,6 +4,11 @@ use crate::variables::GridValue::{self, *};
 
 pub const GRID: [[GridValue; 31]; 28] = include!("grid_data.txt");
 
+pub fn is_walkable(pos: (usize, usize)) -> bool {
+    let tile = GRID[pos.0][pos.1];
+    tile != GridValue::I && tile != GridValue::n
+}
+
 // data computed by the build script (build.rs):
 
 macro_rules! include_generated {
