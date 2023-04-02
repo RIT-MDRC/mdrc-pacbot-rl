@@ -7,7 +7,7 @@ from mdrc_pacbot_rl.pacman.gym import (
     BasePacmanGym,
     NaivePacmanGym,
     SemanticChannelPacmanGym,
-    SingleGhostPacmanGym,
+    SemanticPacmanGym,
 )
 
 
@@ -62,7 +62,7 @@ class TestSemanticChannelPacmanGym:
 
 
 @pytest.mark.parametrize(
-    "gym_env", [NaivePacmanGym(), SemanticChannelPacmanGym(), SingleGhostPacmanGym()]
+    "gym_env", [NaivePacmanGym(), SemanticChannelPacmanGym(), SemanticPacmanGym()]
 )
 class TestGym:
     def test_reset_ok(self, gym_env: BasePacmanGym):
