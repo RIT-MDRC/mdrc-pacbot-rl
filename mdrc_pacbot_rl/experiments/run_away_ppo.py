@@ -5,6 +5,7 @@ CLI Args:
     --eval: Run the last saved policy in the test environment, with
     visualization.
 """
+import copy
 import sys
 from typing import Any
 
@@ -15,6 +16,7 @@ from gymnasium.spaces.discrete import Discrete
 from gymnasium.vector.sync_vector_env import SyncVectorEnv
 from torch.distributions import Categorical
 from tqdm import tqdm
+from mdrc_pacbot_rl.algorithms.ppo import train_ppo
 
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.micro_envs import RunAwayEnv
@@ -35,16 +37,16 @@ eval_steps = 8  # Number of eval runs to average over.
 max_eval_steps = 300  # Max number of steps to take during each eval run.
 v_lr = 0.001  # Learning rate of the value net.
 p_lr = 0.0001  # Learning rate of the policy net.
-device = torch.device("cpu")
+device = torch.device("cuda")
 
 
 class ValueNet(nn.Module):
     def __init__(self, obs_shape: torch.Size):
         nn.Module.__init__(self)
         w, h = obs_shape[1:]
-        self.cnn1 = nn.Conv2d(obs_shape[0], 8, 3)
+        self.cnn1 = nn.Conv2d(obs_shape[0], 8, 2)
         h, w = get_img_size(h, w, self.cnn1)
-        self.cnn2 = nn.Conv2d(8, 16, 3)
+        self.cnn2 = nn.Conv2d(8, 16, 2)
         h, w = get_img_size(h, w, self.cnn2)
         flat_dim = h * w * self.cnn2.out_channels
         self.v_layer1 = nn.Linear(flat_dim, 256)
@@ -71,9 +73,9 @@ class PolicyNet(nn.Module):
     def __init__(self, obs_shape: torch.Size, action_count: int):
         nn.Module.__init__(self)
         w, h = obs_shape[1:]
-        self.cnn1 = nn.Conv2d(obs_shape[0], 8, 3)
+        self.cnn1 = nn.Conv2d(obs_shape[0], 8, 2)
         h, w = get_img_size(h, w, self.cnn1)
-        self.cnn2 = nn.Conv2d(8, 16, 3)
+        self.cnn2 = nn.Conv2d(8, 16, 2)
         h, w = get_img_size(h, w, self.cnn2)
         flat_dim = h * w * self.cnn2.out_channels
         self.a_layer1 = nn.Linear(flat_dim, 256)
@@ -147,14 +149,12 @@ if not isinstance(act_space, Discrete):
     raise RuntimeError("Action space was not discrete")
 v_net = ValueNet(torch.Size(obs_shape))
 p_net = PolicyNet(obs_size, int(act_space.n))
-p_net_old = PolicyNet(obs_size, int(act_space.n))
-p_net_old.eval()
 v_opt = torch.optim.Adam(v_net.parameters(), lr=v_lr)
 p_opt = torch.optim.Adam(p_net.parameters(), lr=p_lr)
 buffer = RolloutBuffer(
     obs_size,
     torch.Size((1,)),
-    torch.Size((4,)),
+    torch.Size((5,)),
     torch.int,
     num_envs,
     train_steps,
@@ -181,43 +181,19 @@ for _ in tqdm(range(iterations), position=0):
         buffer.insert_final_step(obs)
 
     # Train
-    p_net.train()
-    v_net.train()
-    copy_params(p_net, p_net_old)
-
-    total_v_loss = 0.0
-    total_p_loss = 0.0
-    for _ in tqdm(range(train_iters), position=1):
-        batches = buffer.samples(train_batch_size, discount, lambda_, v_net)
-        for prev_states, actions, action_probs, returns, advantages in batches:
-            # Train policy network
-            with torch.no_grad():
-                old_log_probs = p_net_old(prev_states)
-                old_act_probs = Categorical(logits=old_log_probs).log_prob(
-                    actions.squeeze()
-                )
-            p_opt.zero_grad()
-            new_log_probs = p_net(prev_states)
-            new_act_probs = Categorical(logits=new_log_probs).log_prob(
-                actions.squeeze()
-            )
-            term1: torch.Tensor = (new_act_probs - old_act_probs).exp() * advantages
-            term2: torch.Tensor = (1.0 + epsilon * advantages.sign()) * advantages
-            p_loss = -term1.min(term2).mean()
-            p_loss.backward()
-            p_opt.step()
-            total_p_loss += p_loss.item()
-
-            # Train value network
-            v_opt.zero_grad()
-            diff: torch.Tensor = v_net(prev_states) - returns
-            v_loss = (diff * diff).mean()
-            v_loss.backward()
-            v_opt.step()
-            total_v_loss += v_loss.item()
-
-    p_net.eval()
-    v_net.eval()
+    total_p_loss, total_v_loss = train_ppo(
+        p_net,
+        v_net,
+        p_opt,
+        v_opt,
+        buffer,
+        device,
+        train_iters,
+        train_batch_size,
+        discount,
+        lambda_,
+        epsilon,
+    )
     buffer.clear()
 
     # Evaluate

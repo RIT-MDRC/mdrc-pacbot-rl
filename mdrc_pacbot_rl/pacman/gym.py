@@ -59,19 +59,32 @@ class BasePacmanGym(gym.Env):
             self.clock = pygame.time.Clock()
             self.update_surface()
 
+    def get_pos_with_dist(self, pac_pos, min_dist):
+        """
+        Returns a random position a minimum distance away from pacman.
+        This mitigates the chance that an agent gets immediately trapped.
+        """
+        pos = random.choice(self.valid_cells)
+        dist_sqr = min_dist**2
+        while ((pos[0] - pac_pos[0])**2 + (pos[1] - pac_pos[1])**2) < dist_sqr:
+            pos = random.choice(self.valid_cells)
+        return pos
+
     def reset(self):
         self.last_score = 0
         self.game_state.restart()
         if self.random_start:
-            self.game_state.pacbot.update(random.choice(self.valid_cells))
-            # self.game_state.red.pos["current"] = random.choice(self.valid_cells)
-            # self.game_state.red.pos["next"] = self.game_state.red.pos["current"]
-            # self.game_state.pink.pos["current"] = random.choice(self.valid_cells)
-            # self.game_state.pink.pos["next"] = self.game_state.pink.pos["current"]
-            # self.game_state.orange.pos["current"] = random.choice(self.valid_cells)
-            # self.game_state.orange.pos["next"] = self.game_state.orange.pos["current"]
-            # self.game_state.blue.pos["current"] = random.choice(self.valid_cells)
-            # self.game_state.blue.pos["next"] = self.game_state.blue.pos["current"]
+            pac_pos = random.choice(self.valid_cells)
+            self.game_state.pacbot.update(pac_pos)
+            self.game_state.red.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
+            self.game_state.red.pos["next"] = self.game_state.red.pos["current"]
+            self.game_state.pink.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
+            self.game_state.pink.pos["next"] = self.game_state.pink.pos["current"]
+            self.game_state.orange.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
+            self.game_state.orange.pos["next"] = self.game_state.orange.pos["current"]
+            self.game_state.blue.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
+            self.game_state.blue.pos["next"] = self.game_state.blue.pos["current"]
+            self.game_state.state = random.choice([variables.chase, variables.scatter])
         self.game_state.unpause()
         return self.create_obs(), {}
 
@@ -193,10 +206,13 @@ class NaivePacmanGym(BasePacmanGym):
             random_start: If Pacman should start on a random cell.
             ticks_per_step: How many ticks the game should move every step. Ghosts move every 12 ticks.
         """
-        self.observation_space = Box(-1.0, 5.0, (2, GRID_WIDTH, GRID_HEIGHT))
+        self.observation_space = Box(0.0, 5.0, (7, GRID_WIDTH, GRID_HEIGHT))
         self.action_space = Discrete(5)
         self.ticks_per_step = ticks_per_step
         BasePacmanGym.__init__(self, random_start, render_mode)
+        grid = np.array(self.game_state.grid)
+        self.entities = np.zeros([4] + list(grid.shape))
+        self.pacman = np.zeros(grid.shape)
 
     def step(self, action):
         # Update Pacman pos
@@ -208,12 +224,11 @@ class NaivePacmanGym(BasePacmanGym):
 
         done = not self.game_state.play
 
-        # Reward is raw difference in game score, or -100 if eaten
-        reward = self.game_state.score - self.last_score
-        if done:
-            reward = -100
+        # Reward is raw difference in game score
+        reward = math.log(1 + self.game_state.score - self.last_score) / math.log(200)
         if reward == float("Nan"):
             reward = 0
+
         self.last_score = self.game_state.score
 
         self.handle_rendering()
@@ -223,19 +238,40 @@ class NaivePacmanGym(BasePacmanGym):
     def create_obs(self):
         fright = self.game_state.state == variables.frightened
         grid = np.array(self.game_state.grid)
-        entities = np.zeros(grid.shape)
         # Add entities
+        self.entities *= 0.5
         entity_positions = [
-            self.game_state.pacbot.pos,
             self.game_state.red.pos["current"],
             self.game_state.blue.pos["current"],
             self.game_state.pink.pos["current"],
             self.game_state.orange.pos["current"],
         ]
+        state = np.zeros(grid.shape)
         for i, pos in enumerate(entity_positions):
-            entities[pos[0]][pos[1]] = -1 if fright and i > 0 else i + 1
-        obs = np.stack([grid, entities])
+            self.entities[i][pos[0]][pos[1]] = 1
+            state[pos[0]][pos[1]] = self.game_state.state
+
+        pac_pos = self.game_state.pacbot.pos
+        self.pacman *= 0.5
+        self.pacman[pac_pos[0]][pac_pos[1]] = 1
+        
+        obs = np.concatenate([np.stack([grid, self.pacman, state]), self.entities], 0)
         return obs
+        
+    def reset(self):
+        grid = np.array(self.game_state.grid)
+        self.pacman = np.zeros(grid.shape)
+        self.entities = np.zeros([4] + list(grid.shape))
+        entity_positions = [
+            self.game_state.red.pos["current"],
+            self.game_state.blue.pos["current"],
+            self.game_state.pink.pos["current"],
+            self.game_state.orange.pos["current"],
+        ]
+        
+        for i, pos in enumerate(entity_positions):
+            self.entities[i][pos[0]][pos[1]] = 1
+        return super().reset()
 
 
 class SemanticChannelPacmanGym(BasePacmanGym):
