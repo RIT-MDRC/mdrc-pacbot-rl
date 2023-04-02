@@ -1,5 +1,7 @@
 from typing import Literal, Mapping
 
+import numpy as np
+
 class GhostAgent:
     def clear_start_path(self) -> None: ...
     @property
@@ -42,3 +44,5 @@ class GameState:
     def play(self) -> bool: ...
     @property
     def lives(self) -> int: ...
+
+def create_obs_semantic(game_state: GameState) -> np.ndarray: ...
