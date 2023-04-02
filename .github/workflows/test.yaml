@@ -2,7 +2,8 @@ name: test
 on: [push]
 jobs:
   test:
-    runs-on: rust-latest
+    runs-on: ubuntu-latest
+    container: rust:latest
     steps:
     - uses: actions/checkout@v2
     - uses: snok/install-poetry@v1
