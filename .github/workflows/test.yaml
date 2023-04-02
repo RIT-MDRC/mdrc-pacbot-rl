@@ -9,5 +9,5 @@ jobs:
     - uses: snok/install-poetry@v1
     - run: |
         poetry install
-        maturin develop
+        poetry run maturin develop
         poetry run pytest tests
