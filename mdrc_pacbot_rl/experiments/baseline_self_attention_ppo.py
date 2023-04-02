@@ -8,8 +8,8 @@ CLI Args:
 import json
 import sys
 from typing import Any, Tuple
-import numpy as np
 
+import numpy as np
 import torch
 import torch.nn as nn
 import wandb
@@ -17,8 +17,8 @@ from gymnasium.spaces.discrete import Discrete
 from gymnasium.vector.sync_vector_env import SyncVectorEnv
 from torch.distributions import Categorical
 from tqdm import tqdm
-from mdrc_pacbot_rl.algorithms.ppo import train_ppo
 
+from mdrc_pacbot_rl.algorithms.ppo import train_ppo
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.algorithms.self_attention import AttnBlock, gen_pos_encoding
 from mdrc_pacbot_rl.pacman.gym import NaivePacmanGym as PacmanGym
@@ -109,7 +109,7 @@ class BaseNet(nn.Module):
         self.expand = nn.Sequential(
             nn.Linear(input_shape[1], self.emb_dim * 4),
             nn.ReLU(),
-            nn.Linear(self.emb_dim * 4, self.emb_dim)
+            nn.Linear(self.emb_dim * 4, self.emb_dim),
         )
         self.pos = nn.Parameter(pos_encoding, False)
         self.attn = AttnBlock(self.emb_dim + pos_dim, 4)
@@ -231,8 +231,12 @@ v_net = ValueNet(obs_size, pos_encoding, emb_dim)
 p_net = PolicyNet(obs_size, int(act_space.n), pos_encoding, emb_dim)
 v_opt = torch.optim.Adam(v_net.parameters(), lr=v_lr)
 p_opt = torch.optim.Adam(p_net.parameters(), lr=p_lr)
-v_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(v_opt, "max", patience=20, factor=0.5, min_lr=0.0005)
-p_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(p_opt, "max", patience=20, factor=0.5, min_lr=0.00005)
+v_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    v_opt, "max", patience=20, factor=0.5, min_lr=0.0005
+)
+p_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    p_opt, "max", patience=20, factor=0.5, min_lr=0.00005
+)
 buffer = RolloutBuffer(
     torch.Size(obs_size),
     torch.Size((1,)),
@@ -346,7 +350,7 @@ for step in tqdm(range(iterations), position=0):
         else:
             torch.save(v_net, "temp/VNet.pt")
             torch.save(p_net, "temp/PNet.pt")
-            
+
             last_eval_score = smooth_eval_score
             last_v_schedule = v_scheduler.state_dict()
             last_p_schedule = p_scheduler.state_dict()

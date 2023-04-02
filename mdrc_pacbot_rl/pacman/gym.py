@@ -66,7 +66,7 @@ class BasePacmanGym(gym.Env):
         """
         pos = random.choice(self.valid_cells)
         dist_sqr = min_dist**2
-        while ((pos[0] - pac_pos[0])**2 + (pos[1] - pac_pos[1])**2) < dist_sqr:
+        while ((pos[0] - pac_pos[0]) ** 2 + (pos[1] - pac_pos[1]) ** 2) < dist_sqr:
             pos = random.choice(self.valid_cells)
         return pos
 
@@ -254,10 +254,10 @@ class NaivePacmanGym(BasePacmanGym):
         pac_pos = self.game_state.pacbot.pos
         self.pacman *= 0.5
         self.pacman[pac_pos[0]][pac_pos[1]] = 1
-        
+
         obs = np.concatenate([np.stack([grid, self.pacman, state]), self.entities], 0)
         return obs
-        
+
     def reset(self):
         grid = np.array(self.game_state.grid)
         self.pacman = np.zeros(grid.shape)
@@ -268,7 +268,7 @@ class NaivePacmanGym(BasePacmanGym):
             self.game_state.pink.pos["current"],
             self.game_state.orange.pos["current"],
         ]
-        
+
         for i, pos in enumerate(entity_positions):
             self.entities[i][pos[0]][pos[1]] = 1
         return super().reset()

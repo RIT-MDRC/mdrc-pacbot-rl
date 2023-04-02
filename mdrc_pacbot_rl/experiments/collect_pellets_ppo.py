@@ -15,8 +15,8 @@ from gymnasium.spaces.discrete import Discrete
 from gymnasium.vector.sync_vector_env import SyncVectorEnv
 from torch.distributions import Categorical
 from tqdm import tqdm
-from mdrc_pacbot_rl.algorithms.ppo import train_ppo
 
+from mdrc_pacbot_rl.algorithms.ppo import train_ppo
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.micro_envs import GetAllPelletsEnv
 from mdrc_pacbot_rl.utils import get_img_size, init_orthogonal

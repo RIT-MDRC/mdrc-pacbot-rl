@@ -10,8 +10,8 @@ CLI Args:
 import copy
 import sys
 from typing import Any
-import numpy as np
 
+import numpy as np
 import torch
 import torch.nn as nn
 import wandb
@@ -19,8 +19,8 @@ from gymnasium.spaces.discrete import Discrete
 from gymnasium.vector.sync_vector_env import SyncVectorEnv
 from torch.distributions import Categorical
 from tqdm import tqdm
-from mdrc_pacbot_rl.algorithms.ppo import train_ppo
 
+from mdrc_pacbot_rl.algorithms.ppo import train_ppo
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.algorithms.self_attention import AttnBlock, gen_pos_encoding
 from mdrc_pacbot_rl.micro_envs import RunAwayEnv

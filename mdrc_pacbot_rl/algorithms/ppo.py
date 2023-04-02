@@ -1,9 +1,11 @@
+import copy
 from typing import Tuple
+
 import torch
 from torch import nn
-import copy
-from tqdm import tqdm
 from torch.distributions import Categorical
+from tqdm import tqdm
+
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 
 
@@ -42,7 +44,7 @@ def train_ppo(
             action_probs = action_probs.to(device=device)
             returns = returns.to(device=device)
             advantages = advantages.to(device=device)
-            
+
             # Train policy network
             with torch.no_grad():
                 old_act_probs = Categorical(logits=action_probs).log_prob(

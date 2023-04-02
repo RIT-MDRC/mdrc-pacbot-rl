@@ -22,7 +22,7 @@ class RolloutBuffer:
         action_dtype: torch.dtype,
         num_envs: int,
         num_steps: int,
-        device: torch.device, # deprecated
+        device: torch.device,  # deprecated
     ):
         k = torch.float
         state_shape = torch.Size([num_steps + 1, num_envs] + list(state_shape))
@@ -34,9 +34,7 @@ class RolloutBuffer:
         self.num_steps = num_steps
         self.next = 0
         d = torch.device("cpu")
-        self.states = torch.zeros(
-            state_shape, dtype=k, device=d, requires_grad=False
-        )
+        self.states = torch.zeros(state_shape, dtype=k, device=d, requires_grad=False)
         self.actions = torch.zeros(
             action_shape, dtype=action_dtype, device=d, requires_grad=False
         )
@@ -120,9 +118,7 @@ class RolloutBuffer:
 
             # Calculate advantage estimates and rewards to go
             state_values = step_returns.clone()
-            step_advantages = torch.zeros(
-                [self.num_envs], dtype=torch.float, device=d
-            )
+            step_advantages = torch.zeros([self.num_envs], dtype=torch.float, device=d)
             for i in reversed(range(self.num_steps)):
                 prev_states = self.states[i]
                 rewards = self.rewards[i]

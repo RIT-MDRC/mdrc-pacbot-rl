@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 
+
 def gen_pos_encoding(width: int, height: int) -> torch.Tensor:
     """
     Generates a simple 2D positional encoding from -1 to 1.
@@ -10,6 +11,7 @@ def gen_pos_encoding(width: int, height: int) -> torch.Tensor:
     height_pos = torch.arange(0, height).repeat(width, 1) / (height / 2.0) - 1.0
     pos = torch.stack([width_pos, height_pos]).unsqueeze(0)
     return pos
+
 
 class GatingLayer(nn.Module):
     def __init__(self, elements, bias):
@@ -30,6 +32,7 @@ class GatingLayer(nn.Module):
         output = (1 - z) * x + z * h
         return output
 
+
 class AttnBlock(nn.Module):
     """
     This is a special self attention block from the GTrXL paper.
@@ -37,20 +40,19 @@ class AttnBlock(nn.Module):
     It's substantially more expressive, able to learn an identity function
     through the use of gating layers if required.
     """
+
     def __init__(self, emb_dim: int, num_heads: int, gate_bias=2):
         nn.Module.__init__(self)
         self.gate1 = GatingLayer(emb_dim, gate_bias)
         self.gate2 = GatingLayer(emb_dim, gate_bias)
-        
+
         self.attention = nn.MultiheadAttention(emb_dim, num_heads, batch_first=True)
 
         self.norm1 = nn.LayerNorm(emb_dim)
         self.norm2 = nn.LayerNorm(emb_dim)
 
         self.ff = nn.Sequential(
-            nn.Linear(emb_dim, 4 * emb_dim),
-            nn.ReLU(),
-            nn.Linear(emb_dim * 4, emb_dim)
+            nn.Linear(emb_dim, 4 * emb_dim), nn.ReLU(), nn.Linear(emb_dim * 4, emb_dim)
         )
         self.relu = nn.ReLU()
 

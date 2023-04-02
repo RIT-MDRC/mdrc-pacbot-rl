@@ -9,8 +9,8 @@ CLI Args:
 """
 import sys
 from typing import Any
-import numpy as np
 
+import numpy as np
 import torch
 import torch.nn as nn
 import wandb
@@ -18,8 +18,8 @@ from gymnasium.spaces.discrete import Discrete
 from gymnasium.vector.sync_vector_env import SyncVectorEnv
 from torch.distributions import Categorical
 from tqdm import tqdm
-from mdrc_pacbot_rl.algorithms.ppo import train_ppo
 
+from mdrc_pacbot_rl.algorithms.ppo import train_ppo
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.algorithms.self_attention import AttnBlock, gen_pos_encoding
 from mdrc_pacbot_rl.micro_envs import GetAllPelletsEnv
@@ -41,6 +41,7 @@ max_eval_steps = 300  # Max number of steps to take during each eval run.
 v_lr = 0.001  # Learning rate of the value net.
 p_lr = 0.0001  # Learning rate of the policy net.
 device = torch.device("cpu")
+
 
 class ValueNet(nn.Module):
     def __init__(self, obs_shape: torch.Size):
