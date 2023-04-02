@@ -83,3 +83,17 @@ pub fn get_heuristic_value(game_state: &GameState, pos: (usize, usize)) -> Optio
 
     Some(pellet_heuristic + super_pellet_heuristic + ghost_heuristic)
 }
+
+/// Computes the heuristic values for each of the 5 actions for the given GameState.
+#[pyfunction]
+pub fn get_action_heuristic_values(game_state: &GameState) -> [Option<f32>; 5] {
+    let (px, py) = game_state.pacbot.pos;
+    [
+        (px, py),
+        (px, py + 1),
+        (px, py - 1),
+        (px - 1, py),
+        (px + 1, py),
+    ]
+    .map(|pos| get_heuristic_value(game_state, pos))
+}
