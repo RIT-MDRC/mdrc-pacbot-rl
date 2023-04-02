@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 
+
 def gen_pos_encoding(width: int, height: int) -> torch.Tensor:
     """
     Generates a simple 2D positional encoding from -1 to 1.
@@ -10,6 +11,7 @@ def gen_pos_encoding(width: int, height: int) -> torch.Tensor:
     height_pos = torch.arange(0, height).repeat(width, 1) / (height / 2.0) - 1.0
     pos = torch.stack([width_pos, height_pos]).unsqueeze(0)
     return pos
+
 
 class GatingLayer(nn.Module):
     def __init__(self, elements, bias):
@@ -29,6 +31,7 @@ class GatingLayer(nn.Module):
         h = torch.tanh(self.wg(y) + self.ug(r * x))
         output = (1 - z) * x + z * h
         return output
+
 
 class AttnBlock(nn.Module):
     """

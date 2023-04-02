@@ -278,7 +278,7 @@ class NaivePacmanGym(BasePacmanGym):
             entities[pos[0]][pos[1]] = -1 if fright and i > 0 else i + 1
         obs = np.stack([grid, entities])
         return obs
-        
+
     def reset(self):
         grid = np.array(self.game_state.grid)
         self.pacman = np.zeros(grid.shape)
@@ -289,7 +289,7 @@ class NaivePacmanGym(BasePacmanGym):
             self.game_state.pink.pos["current"],
             self.game_state.orange.pos["current"],
         ]
-        
+
         for i, pos in enumerate(entity_positions):
             self.entities[i][pos[0]][pos[1]] = 1
         return super().reset()

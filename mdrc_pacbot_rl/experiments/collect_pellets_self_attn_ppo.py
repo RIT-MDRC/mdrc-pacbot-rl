@@ -42,6 +42,7 @@ v_lr = 0.001  # Learning rate of the value net.
 p_lr = 0.0001  # Learning rate of the policy net.
 device = torch.device("cpu")
 
+
 class ValueNet(nn.Module):
     def __init__(self, obs_shape: torch.Size):
         nn.Module.__init__(self)
