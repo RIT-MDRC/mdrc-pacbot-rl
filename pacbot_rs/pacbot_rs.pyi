@@ -1,4 +1,4 @@
-from typing import Literal, Mapping
+from typing import Literal, Mapping, Optional
 
 import numpy as np
 
@@ -46,3 +46,7 @@ class GameState:
     def lives(self) -> int: ...
 
 def create_obs_semantic(game_state: GameState) -> np.ndarray: ...
+def get_heuristic_value(
+    game_state: GameState, pos: tuple[int, int]
+) -> Optional[float]: ...
+def get_action_heuristic_values(game_state: GameState) -> list[Optional[float]]: ...
