@@ -232,7 +232,7 @@ class NaivePacmanGym(BasePacmanGym):
             random_start: If Pacman should start on a random cell.
             ticks_per_step: How many ticks the game should move every step. Ghosts move every 12 ticks.
         """
-        self.observation_space = Box(0.0, 5.0, (7, GRID_WIDTH, GRID_HEIGHT))
+        self.observation_space = Box(-1.0, 1.0, (9, GRID_WIDTH, GRID_HEIGHT))
         self.action_space = Discrete(5)
         self.ticks_per_step = ticks_per_step
         BasePacmanGym.__init__(self, random_start, render_mode)
@@ -251,7 +251,9 @@ class NaivePacmanGym(BasePacmanGym):
         done = not self.game_state.play
 
         # Reward is raw difference in game score
-        reward = math.log(1 + self.game_state.score - self.last_score) / math.log(200)
+        reward = math.log(1 + self.game_state.score - self.last_score) / math.log(variables.ghost_score)
+        if self.game_state.lives < variables.starting_lives:
+            reward = -1.0
         if reward == float("Nan"):
             reward = 0
 
@@ -280,7 +282,7 @@ class NaivePacmanGym(BasePacmanGym):
         return obs
 
     def reset(self):
-        grid = np.array(self.game_state.grid)
+        grid = np.array(self.game_state.grid) / 6.0
         self.pacman = np.zeros(grid.shape)
         self.entities = np.zeros([4] + list(grid.shape))
         entity_positions = [
