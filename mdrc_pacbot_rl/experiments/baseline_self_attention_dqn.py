@@ -1,11 +1,13 @@
 """
-Baseline for PPO on Pacman gym, using self attention.
+Baseline for PPO on Pacman gym, using DQN.
 
 CLI Args:
     --eval: Run the last saved policy in the test environment, with visualization.
     --resume: Resume training from the last saved policy.
 """
+import copy
 import json
+import random
 import sys
 from typing import Any, Tuple
 
@@ -19,6 +21,7 @@ from torch.distributions import Categorical
 from tqdm import tqdm
 
 from mdrc_pacbot_rl.algorithms.ppo import train_ppo
+from mdrc_pacbot_rl.algorithms.replay_buffer import ReplayBuffer
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.algorithms.self_attention import AttnBlock, gen_pos_encoding
 from mdrc_pacbot_rl.pacman.gym import NaivePacmanGym as PacmanGym
@@ -28,19 +31,18 @@ _: Any
 
 # Hyperparameters
 num_envs = 32  # Number of environments to step through at once during sampling.
-train_steps = 32  # Number of steps to step through during sampling. Total # of samples is train_steps * num_envs/
-iterations = 20000  # Number of sample/train iterations.
-train_iters = 2  # Number of passes over the samples collected.
-train_batch_size = 512  # Minibatch size while training models.
+train_steps = 2  # Number of steps to step through during sampling. Total # of samples is train_steps * num_envs/
+iterations = 10000  # Number of sample/train iterations.
+train_iters = 4  # Number of passes over the samples collected.
+train_batch_size = 128  # Minibatch size while training models.
 discount = 0.0  # Discount factor applied to rewards.
-lambda_ = 0.7  # Lambda for GAE.
-epsilon = 0.2  # Epsilon for importance sample clipping.
-eval_steps = 4  # Number of eval runs to average over.
+q_epsilon = 0.5  # Epsilon for epsilon greedy strategy. This gets annealed over time.
+eval_steps = 1  # Number of eval runs to average over.
 max_eval_steps = 300  # Max number of steps to take during each eval run.
-v_lr = 0.01  # Learning rate of the value net.
-p_lr = 0.001  # Learning rate of the policy net.
+q_lr = 0.0001  # Learning rate of the q net.
+warmup_steps = 500 # For the first n number of steps, we will only sample randomly.
 emb_dim = (
-    8  # Size of the input embeddings to learn, not including positional component.
+    16  # Size of the input embeddings to learn, not including positional component.
 )
 device = torch.device("cuda")
 
@@ -138,19 +140,7 @@ class BaseNet(nn.Module):
         return x
 
 
-class ValueNet(nn.Module):
-    def __init__(self, obs_shape: torch.Size, pos_encoding: torch.Tensor, emb_dim: int):
-        nn.Module.__init__(self)
-        self.net = nn.Sequential(
-            BaseNet(obs_shape, 256, pos_encoding, emb_dim), nn.ReLU(), nn.Linear(256, 1)
-        )
-        init_orthogonal(self)
-
-    def forward(self, input: torch.Tensor):
-        return self.net(input)
-
-
-class PolicyNet(nn.Module):
+class QNet(nn.Module):
     def __init__(
         self,
         obs_shape: torch.Size,
@@ -159,16 +149,30 @@ class PolicyNet(nn.Module):
         emb_dim: int,
     ):
         nn.Module.__init__(self)
-        self.net = nn.Sequential(
-            BaseNet(obs_shape, 256, pos_encoding, emb_dim),
+        self.net = BaseNet(obs_shape, 256, pos_encoding, emb_dim)
+        self.relu = nn.ReLU()
+        self.linear = nn.Linear(256, 256)
+        self.advantage = nn.Sequential(
+            nn.Linear(256, 1024),
             nn.ReLU(),
-            nn.Linear(256, action_count),
-            nn.LogSoftmax(1),
+            nn.Linear(1024, action_count)
         )
+        self.value = nn.Sequential(
+            nn.Linear(256, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 1)
+        )
+        self.action_count = action_count
         init_orthogonal(self)
 
     def forward(self, input: torch.Tensor):
-        return self.net(input)
+        x = self.net(input)
+        x = self.relu(x)
+        x = self.linear(x)
+        x = self.relu(x)
+        advantage = self.advantage(x)
+        value = self.value(x)
+        return value + advantage - advantage.mean(1, keepdim=True)
 
 
 env = SyncVectorEnv([lambda: PacmanGym() for _ in range(num_envs)])
@@ -177,7 +181,7 @@ test_env = PacmanGym()
 # If evaluating, just run the eval env
 if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
     test_env = PacmanGym(render_mode="human", random_start=True)
-    p_net = torch.load("temp/PNet.pt")
+    q_net = torch.load("temp/QNet.pt")
     obs_shape = test_env.observation_space.shape
     if not obs_shape:
         raise RuntimeError("Observation space doesn't have shape")
@@ -186,9 +190,10 @@ if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
     with torch.no_grad():
         obs = process_obs(test_env.reset()[0][np.newaxis, ...], obs_mask)
         for _ in range(max_eval_steps):
-            distr = Categorical(logits=p_net(obs.unsqueeze(0)).squeeze())
-            action = distr.sample().item()
+            q_vals = q_net(obs.unsqueeze(0)).squeeze()
+            action = q_vals.argmax(0).item()
             obs_, reward, done, _, _ = test_env.step(action)
+            print(q_vals, reward)
             obs = process_obs(obs_[np.newaxis, ...], obs_mask)
             if done:
                 break
@@ -198,25 +203,22 @@ wandb.init(
     project="pacbot",
     entity="mdrc-pacbot",
     config={
-        "experiment": "baseline ppo with self attention",
+        "experiment": "baseline dqn with self attention",
         "num_envs": num_envs,
         "train_steps": train_steps,
         "train_iters": train_iters,
         "train_batch_size": train_batch_size,
         "discount": discount,
-        "lambda": lambda_,
-        "epsilon": epsilon,
+        "q_epsilon": q_epsilon,
         "max_eval_steps": max_eval_steps,
-        "v_lr": v_lr,
-        "p_lr": p_lr,
+        "q_lr": q_lr,
         "emb_dim": emb_dim,
     },
 )
 
-v_net_artifact = wandb.Artifact("v_net", "model")
-p_net_artifact = wandb.Artifact("p_net", "model")
+q_net_artifact = wandb.Artifact("q_net", "model")
 
-# Init PPO
+# Init DQN
 obs_shape = env.envs[0].observation_space.shape
 if not obs_shape:
     raise RuntimeError("Observation space doesn't have shape")
@@ -227,151 +229,122 @@ if not isinstance(act_space, Discrete):
 _pos_encoding, obs_mask = load_pos_and_mask(obs_size[1], obs_size[2])
 pos_encoding = torch.from_numpy(_pos_encoding).squeeze(0)
 obs_size = torch.Size([pos_encoding.shape[0], obs_size[0]])
-v_net = ValueNet(obs_size, pos_encoding, emb_dim)
-p_net = PolicyNet(obs_size, int(act_space.n), pos_encoding, emb_dim)
-v_opt = torch.optim.Adam(v_net.parameters(), lr=v_lr)
-p_opt = torch.optim.Adam(p_net.parameters(), lr=p_lr)
-v_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    v_opt, "max", patience=20, factor=0.5, min_lr=0.00001
-)
-p_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    p_opt, "max", patience=20, factor=0.5, min_lr=0.000001
-)
-buffer = RolloutBuffer(
+q_net = QNet(obs_size, int(act_space.n), pos_encoding, emb_dim)
+q_net_target = copy.deepcopy(q_net)
+q_net_target.to(device)
+q_opt = torch.optim.Adam(q_net.parameters(), lr=q_lr)
+buffer = ReplayBuffer(
     torch.Size(obs_size),
-    torch.Size((1,)),
-    torch.Size((5,)),
-    torch.int,
-    num_envs,
-    train_steps,
-    device,
+    10000,
 )
 
 obs = process_obs(env.reset()[0], obs_mask)
-smooth_eval_score = 0.0
-last_eval_score = 0.0
-anneal_discount_after = 1000
-last_discount = discount
-discount_change = 0.00005
-last_v_schedule = v_scheduler.state_dict()
-last_p_schedule = p_scheduler.state_dict()
 for step in tqdm(range(iterations), position=0):
+    percent_done = step / iterations
+
     # Collect experience
     with torch.no_grad():
         for _ in tqdm(range(train_steps), position=1):
-            action_probs = p_net(obs)
-            actions = Categorical(logits=action_probs).sample().numpy()
-            obs_, rewards, dones, truncs, _ = env.step(actions)
+            q_vals = q_net(obs)
+            if random.random() < q_epsilon * (1.0 - percent_done) or step < warmup_steps:
+                actions_ = np.random.randint(0, act_space.n, [num_envs])
+            else:
+                actions_ = q_vals.argmax(1).numpy()
+            obs_, rewards, dones, truncs, _ = env.step(actions_)
+            next_obs = process_obs(obs_, obs_mask)
             buffer.insert_step(
                 obs,
-                torch.from_numpy(actions).unsqueeze(-1),
-                action_probs,
+                next_obs,
+                torch.from_numpy(actions_).squeeze(0),
                 rewards,
                 dones,
-                truncs,
             )
-            obs = process_obs(obs_, obs_mask)
-        buffer.insert_final_step(obs)
+            obs = next_obs
 
     # Train
-    total_p_loss, total_v_loss = train_ppo(
-        p_net,
-        v_net,
-        p_opt,
-        v_opt,
-        buffer,
-        device,
-        train_iters,
-        train_batch_size,
-        discount,
-        lambda_,
-        epsilon,
-    )
-    buffer.clear()
+    total_q_loss = 0.0
+    if buffer.filled:
+        q_net.train()
+        if device.type != "cpu":
+            q_net.to(device)
 
-    # Evaluate
-    eval_done = False
-    with torch.no_grad():
-        # Visualize
-        reward_total = 0
-        pred_reward_total = 0
-        score_total = 0
-        entropy_total = 0.0
-        eval_obs = process_obs(test_env.reset()[0][np.newaxis, ...], obs_mask).squeeze(
-            0
+        total_q_loss = 0.0
+        for _ in tqdm(range(train_iters), position=1):
+            prev_states, states, actions, rewards, dones = buffer.sample(train_batch_size)
+
+            # Move batch to device if applicable
+            prev_states = prev_states.to(device=device)
+            states = prev_states.to(device=device)
+            actions = actions.to(device=device)
+            rewards = rewards.to(device=device)
+            dones = dones.to(device=device)
+
+            # Train q network
+            q_opt.zero_grad()
+            next_actions = q_net(states).argmax(1).squeeze(0)
+            q_target = rewards + discount * q_net_target(states).detach().index_select(1, next_actions) * (1.0 - dones)
+            diff = q_net(prev_states).index_select(1, actions) - q_target
+            q_loss = (diff * diff).mean()
+            q_loss.backward()
+            q_opt.step()
+            total_q_loss += q_loss.item()
+
+        if device.type != "cpu":
+            q_net.cpu()
+        q_net.eval()
+
+        # Evaluate
+        eval_done = False
+        with torch.no_grad():
+            # Visualize
+            reward_total = 0
+            pred_reward_total = 0
+            score_total = 0
+            eval_obs = process_obs(test_env.reset()[0][np.newaxis, ...], obs_mask).squeeze(
+                0
+            )
+            for _ in range(eval_steps):
+                avg_entropy = 0.0
+                steps_taken = 0
+                score = 0
+                for _ in range(max_eval_steps):
+                    q_vals = q_net(eval_obs.unsqueeze(0)).squeeze()
+                    action = q_vals.argmax(0).item()
+                    score = test_env.score()
+                    pred_reward_total += q_net(eval_obs.unsqueeze(0)).squeeze().max(0).values.item()
+                    obs_, reward, eval_done, eval_trunc, _ = test_env.step(action)
+                    eval_obs = process_obs(obs_[np.newaxis, ...], obs_mask).squeeze(0)
+                    steps_taken += 1
+                    reward_total += reward
+                    if eval_done or eval_trunc:
+                        eval_obs = process_obs(
+                            test_env.reset()[0][np.newaxis, ...], obs_mask
+                        ).squeeze(0)
+                        break
+                avg_entropy /= steps_taken
+                score_total += score
+
+        wandb.log(
+            {
+                "avg_eval_episode_reward": reward_total / eval_steps,
+                "avg_eval_episode_predicted_reward": pred_reward_total / eval_steps,
+                "avg_eval_episode_score": score_total / eval_steps,
+                "avg_q_loss": total_q_loss / train_iters,
+                "q_lr": q_opt.param_groups[-1]["lr"],
+            }
         )
-        for _ in range(eval_steps):
-            avg_entropy = 0.0
-            steps_taken = 0
-            score = 0
-            for _ in range(max_eval_steps):
-                distr = Categorical(logits=p_net(eval_obs.unsqueeze(0)).squeeze())
-                action = distr.sample().item()
-                score = test_env.score()
-                pred_reward_total += v_net(eval_obs.unsqueeze(0)).squeeze().item()
-                obs_, reward, eval_done, eval_trunc, _ = test_env.step(action)
-                eval_obs = process_obs(obs_[np.newaxis, ...], obs_mask).squeeze(0)
-                steps_taken += 1
-                reward_total += reward
-                avg_entropy += distr.entropy()
-                if eval_done or eval_trunc:
-                    eval_obs = process_obs(
-                        test_env.reset()[0][np.newaxis, ...], obs_mask
-                    ).squeeze(0)
-                    break
-            avg_entropy /= steps_taken
-            entropy_total += avg_entropy
-            score_total += score
 
-    # Update learning rate
-    smooth_update = 0.04
-    smooth_eval_score += smooth_update * (score_total / eval_steps - smooth_eval_score)
-    v_scheduler.step(smooth_eval_score)
-    p_scheduler.step(smooth_eval_score)
-
-    wandb.log(
-        {
-            "avg_eval_episode_reward": reward_total / eval_steps,
-            "avg_eval_episode_predicted_reward": pred_reward_total / eval_steps,
-            "avg_eval_episode_score": score_total / eval_steps,
-            "avg_eval_entropy": entropy_total / eval_steps,
-            "avg_v_loss": total_v_loss / train_iters,
-            "avg_p_loss": total_p_loss / train_iters,
-            "v_lr": v_opt.param_groups[-1]["lr"],
-            "p_lr": p_opt.param_groups[-1]["lr"],
-            "smooth_eval_score": smooth_eval_score,
-        }
-    )
+    # Update Q target
+    if (step + 1) % 100 == 0:
+        q_net_target.load_state_dict(q_net.state_dict())
 
     # Perform backups
-    if (step + 1) % 200 == 0:
-        if smooth_eval_score < last_eval_score:
-            v_net.load_state_dict(torch.load("temp/VNet.pt").state_dict())
-            p_net.load_state_dict(torch.load("temp/PNet.pt").state_dict())
-            v_scheduler.load_state_dict(last_v_schedule)
-            p_scheduler.load_state_dict(last_p_schedule)
-            discount = last_discount
-
-    if (step + 1) % 10 == 0:
-        if smooth_eval_score > last_eval_score:
-            torch.save(v_net, "temp/VNet.pt")
-            torch.save(p_net, "temp/PNet.pt")
-
-            last_eval_score = smooth_eval_score
-            last_v_schedule = v_scheduler.state_dict()
-            last_p_schedule = p_scheduler.state_dict()
-            last_discount = discount
-            
-    if step > anneal_discount_after:
-        discount = min(0.9, discount + discount_change)
+    if (step + 1) % 100 == 0:
+        torch.save(q_net, "temp/QNet.pt")
 
 # Save artifacts
-torch.save(v_net, "temp/VNet.pt")
-v_net_artifact.add_file("temp/VNet.pt")
-wandb.log_artifact(v_net_artifact)
-
-torch.save(p_net, "temp/PNet.pt")
-p_net_artifact.add_file("temp/PNet.pt")
-wandb.log_artifact(p_net_artifact, "temp/PNet.pt")
+torch.save(q_net, "temp/QNet.pt")
+q_net_artifact.add_file("temp/QNet.pt")
+wandb.log_artifact(q_net_artifact)
 
 wandb.finish()

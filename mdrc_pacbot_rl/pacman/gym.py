@@ -189,7 +189,7 @@ class NaivePacmanGym(BasePacmanGym):
     """
     Naive Pacman environment with little preprocessing.
 
-    Observation: Box space of 2x28x31. Dims 2 and 3 are the width and height,
+    Observation: Box space of 9x28x31. Dims 2 and 3 are the width and height,
     while the first is a stack of grid data and entity (Pacman, ghosts) data.
     Action: Discrete space of nothing, up, down, left, right.
     Rewards: Difference between score after action and before.
@@ -206,7 +206,7 @@ class NaivePacmanGym(BasePacmanGym):
             random_start: If Pacman should start on a random cell.
             ticks_per_step: How many ticks the game should move every step. Ghosts move every 12 ticks.
         """
-        self.observation_space = Box(0.0, 5.0, (7, GRID_WIDTH, GRID_HEIGHT))
+        self.observation_space = Box(-1.0, 1.0, (9, GRID_WIDTH, GRID_HEIGHT))
         self.action_space = Discrete(5)
         self.ticks_per_step = ticks_per_step
         BasePacmanGym.__init__(self, random_start, render_mode)
@@ -225,7 +225,9 @@ class NaivePacmanGym(BasePacmanGym):
         done = not self.game_state.play
 
         # Reward is raw difference in game score
-        reward = math.log(1 + self.game_state.score - self.last_score) / math.log(200)
+        reward = math.log(1 + self.game_state.score - self.last_score) / math.log(variables.ghost_score)
+        if self.game_state.lives < variables.starting_lives:
+            reward = -1.0
         if reward == float("Nan"):
             reward = 0
 
@@ -236,8 +238,26 @@ class NaivePacmanGym(BasePacmanGym):
         return self.create_obs(), reward, done, {}, {}
 
     def create_obs(self):
-        fright = self.game_state.state == variables.frightened
         grid = np.array(self.game_state.grid)
+        entity_positions = [
+            self.game_state.red.pos["current"],
+            self.game_state.pink.pos["current"],
+            self.game_state.orange.pos["current"],
+            self.game_state.blue.pos["current"],
+        ]
+        ghost = np.zeros(grid.shape)
+        for pos in entity_positions:
+            ghost[pos[0]][pos[1]] = 1
+        fright = self.game_state.state == variables.frightened
+        fright_ghost = np.where(ghost > 0, 1, 0) * int(fright)
+        reward = np.log(
+            1+
+            np.where(grid == 2, 1, 0) * variables.pellet_score
+            + np.where(grid == 6, 1, 0) * variables.cherry_score
+            + np.where(grid == 4, 1, 0) * variables.power_pellet_score
+            + fright_ghost * variables.ghost_score
+        ) / math.log(variables.ghost_score)
+
         # Add entities
         self.entities *= 0.5
         entity_positions = [
@@ -246,20 +266,20 @@ class NaivePacmanGym(BasePacmanGym):
             self.game_state.pink.pos["current"],
             self.game_state.orange.pos["current"],
         ]
-        state = np.zeros(grid.shape)
+        state = np.zeros([3] + list(grid.shape))
         for i, pos in enumerate(entity_positions):
             self.entities[i][pos[0]][pos[1]] = 1
-            state[pos[0]][pos[1]] = self.game_state.state
+            state[self.game_state.state - 1][pos[0]][pos[1]] = 1
 
         pac_pos = self.game_state.pacbot.pos
         self.pacman *= 0.5
         self.pacman[pac_pos[0]][pac_pos[1]] = 1
 
-        obs = np.concatenate([np.stack([grid, self.pacman, state]), self.entities], 0)
+        obs = np.concatenate([np.concatenate([np.stack([self.pacman, reward]), self.entities], 0), state], 0)
         return obs
 
     def reset(self):
-        grid = np.array(self.game_state.grid)
+        grid = np.array(self.game_state.grid) / 6.0
         self.pacman = np.zeros(grid.shape)
         self.entities = np.zeros([4] + list(grid.shape))
         entity_positions = [
