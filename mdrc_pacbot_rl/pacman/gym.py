@@ -232,7 +232,7 @@ class NaivePacmanGym(BasePacmanGym):
             random_start: If Pacman should start on a random cell.
             ticks_per_step: How many ticks the game should move every step. Ghosts move every 12 ticks.
         """
-        self.observation_space = Box(-1.0, 1.0, (10, GRID_WIDTH, GRID_HEIGHT))
+        self.observation_space = Box(-1.0, 5.0, (2, GRID_WIDTH, GRID_HEIGHT))
         self.action_space = Discrete(5)
         self.ticks_per_step = ticks_per_step
         BasePacmanGym.__init__(self, random_start, render_mode)
