@@ -232,7 +232,7 @@ class NaivePacmanGym(BasePacmanGym):
             random_start: If Pacman should start on a random cell.
             ticks_per_step: How many ticks the game should move every step. Ghosts move every 12 ticks.
         """
-        self.observation_space = Box(-1.0, 1.0, (9, GRID_WIDTH, GRID_HEIGHT))
+        self.observation_space = Box(-1.0, 1.0, (10, GRID_WIDTH, GRID_HEIGHT))
         self.action_space = Discrete(5)
         self.ticks_per_step = ticks_per_step
         BasePacmanGym.__init__(self, random_start, render_mode)
@@ -251,7 +251,9 @@ class NaivePacmanGym(BasePacmanGym):
         done = not self.game_state.play
 
         # Reward is raw difference in game score
-        reward = math.log(1 + self.game_state.score - self.last_score) / math.log(variables.ghost_score)
+        reward = math.log(1 + self.game_state.score - self.last_score) / math.log(
+            variables.ghost_score
+        )
         if self.game_state.lives < variables.starting_lives:
             reward = -1.0
         if reward == float("Nan"):
@@ -259,9 +261,11 @@ class NaivePacmanGym(BasePacmanGym):
 
         self.last_score = self.game_state.score
 
+        action_mask = self.action_mask()
+
         self.handle_rendering()
 
-        return self.create_obs(), reward, done, {}, {}
+        return self.create_obs(), reward, done, False, {"action_mask": action_mask}
 
     def create_obs(self):
         fright = self.game_state.is_frightened()
@@ -294,7 +298,9 @@ class NaivePacmanGym(BasePacmanGym):
 
         for i, pos in enumerate(entity_positions):
             self.entities[i][pos[0]][pos[1]] = 1
-        return super().reset()
+        obs, info = super().reset()
+        info["action_mask"] = self.action_mask()
+        return obs, info
 
 
 class SemanticChannelPacmanGym(BasePacmanGym):
