@@ -204,7 +204,6 @@ class BasePacmanGym(gym.Env):
 class NaivePacmanGym(BasePacmanGym):
     """
     Naive Pacman environment with little preprocessing.
-
     Observation: Box space of 2x28x31. Dims 2 and 3 are the width and height,
     while the first is a stack of grid data and entity (Pacman, ghosts) data.
     Action: Discrete space of nothing, up, down, left, right.
@@ -226,9 +225,6 @@ class NaivePacmanGym(BasePacmanGym):
         self.action_space = Discrete(5)
         self.ticks_per_step = ticks_per_step
         BasePacmanGym.__init__(self, random_start, render_mode)
-        grid = np.array(self.game_state.grid)
-        self.entities = np.zeros([4] + list(grid.shape))
-        self.pacman = np.zeros(grid.shape)
 
     def step(self, action):
         # Update Pacman pos
@@ -240,101 +236,35 @@ class NaivePacmanGym(BasePacmanGym):
 
         done = not self.game_state.play
 
-        # Reward is raw difference in game score
-        reward = math.log(1 + self.game_state.score - self.last_score) / math.log(
-            variables.ghost_score
-        )
-        if self.game_state.lives < variables.starting_lives:
-            reward = -1.0
+        # Reward is raw difference in game score, or -100 if eaten
+        reward = self.game_state.score - self.last_score
+        if done:
+            reward = -100
         if reward == float("Nan"):
             reward = 0
-
         self.last_score = self.game_state.score
-
-        action_mask = self.action_mask()
 
         self.handle_rendering()
 
-        return self.create_obs(), reward, done, False, {"action_mask": action_mask}
+        return self.create_obs(), reward, done, {}, {}
 
     def create_obs(self):
-        grid = np.array(self.game_state.grid)
-        entity_positions = [
-            self.game_state.red.pos["current"],
-            self.game_state.pink.pos["current"],
-            self.game_state.orange.pos["current"],
-            self.game_state.blue.pos["current"],
-        ]
-        ghost = np.zeros(grid.shape)
-        for pos in entity_positions:
-            ghost[pos[0]][pos[1]] = 1
-        fright = self.game_state.state == variables.frightened
-        fright_ghost = np.where(ghost > 0, 1, 0) * int(fright)
-        reward = np.log(
-            1
-            + np.where(grid == 2, 1, 0) * variables.pellet_score
-            + np.where(grid == 6, 1, 0) * variables.cherry_score
-            + np.where(grid == 4, 1, 0) * variables.power_pellet_score
-            + fright_ghost * variables.ghost_score
-        ) / math.log(variables.ghost_score)
-
+        fright = self.game_state.is_frightened()
+        grid = np.asarray(self.game_state.grid)
+        entities = np.zeros(grid.shape)
         # Add entities
-        self.entities *= 0.5
         entity_positions = [
+            self.game_state.pacbot.pos,
             self.game_state.red.pos["current"],
             self.game_state.blue.pos["current"],
             self.game_state.pink.pos["current"],
             self.game_state.orange.pos["current"],
         ]
-        state = np.zeros([3] + list(grid.shape))
-        for i, pos in enumerate(entity_positions):
-            self.entities[i][pos[0]][pos[1]] = 1
-            state[self.game_state.state - 1][pos[0]][pos[1]] = 1
-
-        pac_pos = self.game_state.pacbot.pos
-        self.pacman *= 0.5
-        self.pacman[pac_pos[0]][pac_pos[1]] = 1
-
-        # Distance map
-        width_diff = (
-            np.arange(0, GRID_WIDTH)[np.newaxis, ...].repeat(GRID_HEIGHT, 0).T
-            - pac_pos[0]
-        )
-        height_diff = (
-            np.arange(0, GRID_HEIGHT)[np.newaxis, ...].repeat(GRID_WIDTH, 0)
-            - pac_pos[1]
-        )
-        dist = (
-            1 - (abs(width_diff) + abs(height_diff)) / (GRID_WIDTH + GRID_HEIGHT)
-        ) ** 2
-
-        obs = np.concatenate(
-            [
-                np.concatenate(
-                    [np.stack([self.pacman, reward, dist]), self.entities], 0
-                ),
-                state,
-            ],
-            0,
-        )
+        # temporarily hacked to ensure pacman's position is always in obs
+        for i, pos in reversed(list(enumerate(entity_positions))):
+            entities[pos[0]][pos[1]] = -1 if fright and i > 0 else i + 1
+        obs = np.stack([grid, entities])
         return obs
-
-    def reset(self):
-        grid = np.array(self.game_state.grid) / 6.0
-        self.pacman = np.zeros(grid.shape)
-        self.entities = np.zeros([4] + list(grid.shape))
-        entity_positions = [
-            self.game_state.red.pos["current"],
-            self.game_state.blue.pos["current"],
-            self.game_state.pink.pos["current"],
-            self.game_state.orange.pos["current"],
-        ]
-
-        for i, pos in enumerate(entity_positions):
-            self.entities[i][pos[0]][pos[1]] = 1
-        obs, info = super().reset()
-        info["action_mask"] = self.action_mask()
-        return obs, info
 
 
 class SemanticChannelPacmanGym(BasePacmanGym):
