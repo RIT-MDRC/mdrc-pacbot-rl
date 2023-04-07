@@ -55,7 +55,7 @@ class ValueNet(nn.Module):
         h, w = get_img_size(h, w, self.cnn2)
         self.pos = nn.Parameter(gen_pos_encoding(w, h), False)
         self.input_size = w * h
-        self.attn = AttnBlock(self.emb_dim, 4)
+        self.attn = AttnBlock(self.emb_dim, self.input_size, 4)
         self.v_layer1 = nn.Linear(self.emb_dim, 256)
         self.v_layer2 = nn.Linear(256, 1)
         self.relu = nn.ReLU()
@@ -96,7 +96,7 @@ class PolicyNet(nn.Module):
         h, w = get_img_size(h, w, self.cnn2)
         self.pos = nn.Parameter(gen_pos_encoding(w, h), False)
         self.input_size = w * h
-        self.attn = AttnBlock(self.emb_dim, 4)
+        self.attn = AttnBlock(self.emb_dim, self.input_size, 4)
         self.a_layer1 = nn.Linear(self.emb_dim, 256)
         self.a_layer2 = nn.Linear(256, action_count)
         self.relu = nn.ReLU()

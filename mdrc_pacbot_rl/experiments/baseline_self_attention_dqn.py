@@ -114,8 +114,8 @@ class BaseNet(nn.Module):
             nn.Linear(self.emb_dim * 4, self.emb_dim),
         )
         self.pos = nn.Parameter(pos_encoding, False)
-        self.attn = AttnBlock(self.emb_dim + pos_dim, 4)
-        self.linear = nn.Linear(self.emb_dim + pos_dim, out_features)
+        self.attn = AttnBlock(self.emb_dim, input_shape[0], 4)
+        self.linear = nn.Linear(self.emb_dim, out_features)
         self.relu = nn.ReLU()
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
