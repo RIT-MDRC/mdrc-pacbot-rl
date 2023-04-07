@@ -120,6 +120,22 @@ class BasePacmanGym(gym.Env):
         if self.game_state.grid[new_pos[0]][new_pos[1]] != 1:
             self.game_state.pacbot.update(new_pos)
 
+    def action_mask(self):
+        """
+        Returns the current action mask.
+        """
+        mask = [1, 0, 0, 0, 0]
+        pos = self.game_state.pacbot.pos
+        if pos[1] == GRID_HEIGHT - 1 or self.game_state.grid[pos[0]][pos[1] + 1] == 1:
+            mask[1] = 1
+        if pos[1] == 0 or self.game_state.grid[pos[0]][pos[1] - 1] == 1:
+            mask[2] = 1
+        if pos[0] == 0 or self.game_state.grid[pos[0] - 1][pos[1]] == 1:
+            mask[3] = 1
+        if pos[0] == GRID_WIDTH - 1 or self.game_state.grid[pos[0] + 1][pos[1]] == 1:
+            mask[4] = 1
+        return mask
+
     def handle_rendering(self):
         """
         If render mode is set to human, renders the frame.
@@ -206,7 +222,7 @@ class NaivePacmanGym(BasePacmanGym):
             random_start: If Pacman should start on a random cell.
             ticks_per_step: How many ticks the game should move every step. Ghosts move every 12 ticks.
         """
-        self.observation_space = Box(-1.0, 1.0, (9, GRID_WIDTH, GRID_HEIGHT))
+        self.observation_space = Box(-1.0, 1.0, (10, GRID_WIDTH, GRID_HEIGHT))
         self.action_space = Discrete(5)
         self.ticks_per_step = ticks_per_step
         BasePacmanGym.__init__(self, random_start, render_mode)
@@ -225,7 +241,9 @@ class NaivePacmanGym(BasePacmanGym):
         done = not self.game_state.play
 
         # Reward is raw difference in game score
-        reward = math.log(1 + self.game_state.score - self.last_score) / math.log(variables.ghost_score)
+        reward = math.log(1 + self.game_state.score - self.last_score) / math.log(
+            variables.ghost_score
+        )
         if self.game_state.lives < variables.starting_lives:
             reward = -1.0
         if reward == float("Nan"):
@@ -233,9 +251,11 @@ class NaivePacmanGym(BasePacmanGym):
 
         self.last_score = self.game_state.score
 
+        action_mask = self.action_mask()
+
         self.handle_rendering()
 
-        return self.create_obs(), reward, done, {}, {}
+        return self.create_obs(), reward, done, False, {"action_mask": action_mask}
 
     def create_obs(self):
         grid = np.array(self.game_state.grid)
@@ -251,8 +271,8 @@ class NaivePacmanGym(BasePacmanGym):
         fright = self.game_state.state == variables.frightened
         fright_ghost = np.where(ghost > 0, 1, 0) * int(fright)
         reward = np.log(
-            1+
-            np.where(grid == 2, 1, 0) * variables.pellet_score
+            1
+            + np.where(grid == 2, 1, 0) * variables.pellet_score
             + np.where(grid == 6, 1, 0) * variables.cherry_score
             + np.where(grid == 4, 1, 0) * variables.power_pellet_score
             + fright_ghost * variables.ghost_score
@@ -275,7 +295,28 @@ class NaivePacmanGym(BasePacmanGym):
         self.pacman *= 0.5
         self.pacman[pac_pos[0]][pac_pos[1]] = 1
 
-        obs = np.concatenate([np.concatenate([np.stack([self.pacman, reward]), self.entities], 0), state], 0)
+        # Distance map
+        width_diff = (
+            np.arange(0, GRID_WIDTH)[np.newaxis, ...].repeat(GRID_HEIGHT, 0).T
+            - pac_pos[0]
+        )
+        height_diff = (
+            np.arange(0, GRID_HEIGHT)[np.newaxis, ...].repeat(GRID_WIDTH, 0)
+            - pac_pos[1]
+        )
+        dist = (
+            1 - (abs(width_diff) + abs(height_diff)) / (GRID_WIDTH + GRID_HEIGHT)
+        ) ** 2
+
+        obs = np.concatenate(
+            [
+                np.concatenate(
+                    [np.stack([self.pacman, reward, dist]), self.entities], 0
+                ),
+                state,
+            ],
+            0,
+        )
         return obs
 
     def reset(self):
@@ -291,7 +332,9 @@ class NaivePacmanGym(BasePacmanGym):
 
         for i, pos in enumerate(entity_positions):
             self.entities[i][pos[0]][pos[1]] = 1
-        return super().reset()
+        obs, info = super().reset()
+        info["action_mask"] = self.action_mask()
+        return obs, info
 
 
 class SemanticChannelPacmanGym(BasePacmanGym):

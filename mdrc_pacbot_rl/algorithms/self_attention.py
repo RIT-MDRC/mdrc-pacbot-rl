@@ -41,15 +41,15 @@ class AttnBlock(nn.Module):
     through the use of gating layers if required.
     """
 
-    def __init__(self, emb_dim: int, num_heads: int, gate_bias=2):
+    def __init__(self, emb_dim: int, input_size: int, num_heads: int, gate_bias=2):
         nn.Module.__init__(self)
         self.gate1 = GatingLayer(emb_dim, gate_bias)
         self.gate2 = GatingLayer(emb_dim, gate_bias)
 
         self.attention = nn.MultiheadAttention(emb_dim, num_heads, batch_first=True)
 
-        self.norm1 = nn.LayerNorm(emb_dim)
-        self.norm2 = nn.LayerNorm(emb_dim)
+        self.norm1 = nn.BatchNorm1d(input_size)
+        self.norm2 = nn.BatchNorm1d(input_size)
 
         self.ff = nn.Sequential(
             nn.Linear(emb_dim, 4 * emb_dim), nn.ReLU(), nn.Linear(emb_dim * 4, emb_dim)

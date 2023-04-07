@@ -24,17 +24,15 @@ class ReplayBuffer:
         self.next = 0
         d = torch.device("cpu")
         self.states = torch.zeros(state_shape, dtype=k, device=d, requires_grad=False)
-        self.next_states = torch.zeros(state_shape, dtype=k, device=d, requires_grad=False)
+        self.next_states = torch.zeros(
+            state_shape, dtype=k, device=d, requires_grad=False
+        )
         self.actions = torch.zeros(
             action_shape, dtype=torch.int64, device=d, requires_grad=False
         )
-        self.rewards = torch.zeros(
-            [capacity], dtype=k, device=d, requires_grad=False
-        )
+        self.rewards = torch.zeros([capacity], dtype=k, device=d, requires_grad=False)
         # Technically this is the "terminated" flag
-        self.dones = torch.zeros(
-            [capacity], dtype=k, device=d, requires_grad=False
-        )
+        self.dones = torch.zeros([capacity], dtype=k, device=d, requires_grad=False)
         self.filled = False
 
     def insert_step(
@@ -59,11 +57,11 @@ class ReplayBuffer:
             self.states.index_copy_(0, indices, states)
             self.next_states.index_copy_(0, indices, next_states)
             self.actions.index_copy_(0, indices, actions)
-            self.rewards.index_copy_(0, indices,
-                torch.tensor(rewards, dtype=torch.float, device=d)
+            self.rewards.index_copy_(
+                0, indices, torch.tensor(rewards, dtype=torch.float, device=d)
             )
-            self.dones.index_copy_(0, indices,
-                torch.tensor(dones, dtype=torch.float, device=d)
+            self.dones.index_copy_(
+                0, indices, torch.tensor(dones, dtype=torch.float, device=d)
             )
         self.next = (self.next + batch_size) % self.capacity
         if self.next == 0:
@@ -71,13 +69,7 @@ class ReplayBuffer:
 
     def sample(
         self, batch_size: int
-    ) -> Tuple[
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-            torch.Tensor,
-        ]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,]:
         """
         Generates minibatches of experience.
         """

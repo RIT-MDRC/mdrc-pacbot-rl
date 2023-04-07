@@ -40,7 +40,7 @@ q_epsilon = 0.5  # Epsilon for epsilon greedy strategy. This gets annealed over 
 eval_steps = 1  # Number of eval runs to average over.
 max_eval_steps = 300  # Max number of steps to take during each eval run.
 q_lr = 0.0001  # Learning rate of the q net.
-warmup_steps = 500 # For the first n number of steps, we will only sample randomly.
+warmup_steps = 500  # For the first n number of steps, we will only sample randomly.
 emb_dim = (
     16  # Size of the input embeddings to learn, not including positional component.
 )
@@ -153,15 +153,9 @@ class QNet(nn.Module):
         self.relu = nn.ReLU()
         self.linear = nn.Linear(256, 256)
         self.advantage = nn.Sequential(
-            nn.Linear(256, 1024),
-            nn.ReLU(),
-            nn.Linear(1024, action_count)
+            nn.Linear(256, 1024), nn.ReLU(), nn.Linear(1024, action_count)
         )
-        self.value = nn.Sequential(
-            nn.Linear(256, 1024),
-            nn.ReLU(),
-            nn.Linear(1024, 1)
-        )
+        self.value = nn.Sequential(nn.Linear(256, 1024), nn.ReLU(), nn.Linear(1024, 1))
         self.action_count = action_count
         init_orthogonal(self)
 
@@ -246,7 +240,10 @@ for step in tqdm(range(iterations), position=0):
     with torch.no_grad():
         for _ in tqdm(range(train_steps), position=1):
             q_vals = q_net(obs)
-            if random.random() < q_epsilon * (1.0 - percent_done) or step < warmup_steps:
+            if (
+                random.random() < q_epsilon * (1.0 - percent_done)
+                or step < warmup_steps
+            ):
                 actions_ = np.random.randint(0, act_space.n, [num_envs])
             else:
                 actions_ = q_vals.argmax(1).numpy()
@@ -270,7 +267,9 @@ for step in tqdm(range(iterations), position=0):
 
         total_q_loss = 0.0
         for _ in tqdm(range(train_iters), position=1):
-            prev_states, states, actions, rewards, dones = buffer.sample(train_batch_size)
+            prev_states, states, actions, rewards, dones = buffer.sample(
+                train_batch_size
+            )
 
             # Move batch to device if applicable
             prev_states = prev_states.to(device=device)
@@ -282,7 +281,9 @@ for step in tqdm(range(iterations), position=0):
             # Train q network
             q_opt.zero_grad()
             next_actions = q_net(states).argmax(1).squeeze(0)
-            q_target = rewards + discount * q_net_target(states).detach().index_select(1, next_actions) * (1.0 - dones)
+            q_target = rewards + discount * q_net_target(states).detach().index_select(
+                1, next_actions
+            ) * (1.0 - dones)
             diff = q_net(prev_states).index_select(1, actions) - q_target
             q_loss = (diff * diff).mean()
             q_loss.backward()
@@ -300,9 +301,9 @@ for step in tqdm(range(iterations), position=0):
             reward_total = 0
             pred_reward_total = 0
             score_total = 0
-            eval_obs = process_obs(test_env.reset()[0][np.newaxis, ...], obs_mask).squeeze(
-                0
-            )
+            eval_obs = process_obs(
+                test_env.reset()[0][np.newaxis, ...], obs_mask
+            ).squeeze(0)
             for _ in range(eval_steps):
                 avg_entropy = 0.0
                 steps_taken = 0
@@ -311,7 +312,9 @@ for step in tqdm(range(iterations), position=0):
                     q_vals = q_net(eval_obs.unsqueeze(0)).squeeze()
                     action = q_vals.argmax(0).item()
                     score = test_env.score()
-                    pred_reward_total += q_net(eval_obs.unsqueeze(0)).squeeze().max(0).values.item()
+                    pred_reward_total += (
+                        q_net(eval_obs.unsqueeze(0)).squeeze().max(0).values.item()
+                    )
                     obs_, reward, eval_done, eval_trunc, _ = test_env.step(action)
                     eval_obs = process_obs(obs_[np.newaxis, ...], obs_mask).squeeze(0)
                     steps_taken += 1

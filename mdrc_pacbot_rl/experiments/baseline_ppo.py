@@ -190,7 +190,7 @@ for _ in tqdm(range(iterations), position=0):
     total_p_loss = 0.0
     for _ in tqdm(range(train_iters), position=1):
         batches = buffer.samples(train_batch_size, discount, lambda_, v_net)
-        for prev_states, actions, action_probs, returns, advantages in batches:
+        for prev_states, actions, action_probs, returns, advantages, _ in batches:
             # Train policy network
             with torch.no_grad():
                 old_log_probs = p_net_old(prev_states)

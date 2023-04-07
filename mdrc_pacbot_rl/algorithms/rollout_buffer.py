@@ -2,7 +2,7 @@
 A rollout buffer for use with on-policy algorithms. Unlike a replay buffer,
 rollouts only store experience collected under a single policy.
 """
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 from torch import nn
@@ -51,6 +51,9 @@ class RolloutBuffer:
         self.truncs = torch.zeros(
             [num_steps, num_envs], dtype=k, device=d, requires_grad=False
         )
+        self.masks = torch.zeros(
+            action_probs_shape, dtype=torch.int, device=d, requires_grad=False
+        )
 
     def insert_step(
         self,
@@ -60,6 +63,7 @@ class RolloutBuffer:
         rewards: List[float],
         dones: List[bool],
         truncs: List[bool],
+        masks: Optional[List[int]] = None,
     ):
         """
         Inserts a transition from each environment into the buffer. Make sure
@@ -81,6 +85,11 @@ class RolloutBuffer:
             self.truncs[self.next].copy_(
                 torch.tensor(truncs, dtype=torch.float, device=d)
             )
+            if masks:
+                self.masks[self.next].copy_(
+                    torch.tensor(masks, dtype=torch.int, device=d)
+                )
+
         self.next += 1
 
     def insert_final_step(self, states: torch.Tensor):
@@ -94,6 +103,7 @@ class RolloutBuffer:
         self, batch_size: int, discount: float, lambda_: float, v_net: nn.Module
     ) -> list[
         Tuple[
+            torch.Tensor,
             torch.Tensor,
             torch.Tensor,
             torch.Tensor,
@@ -146,6 +156,7 @@ class RolloutBuffer:
             rand_prev_states = self.states.flatten(0, 1).index_select(0, indices)
             rand_actions = self.actions.flatten(0, 1).index_select(0, indices)
             rand_action_probs = self.action_probs.flatten(0, 1).index_select(0, indices)
+            rand_masks = self.masks.flatten(0, 1).index_select(0, indices)
             rand_returns = returns.flatten(0, 1).index_select(0, indices)
             rand_advantages = advantages.flatten(0, 1).index_select(0, indices)
             batch_count = exp_count // batch_size
@@ -166,6 +177,9 @@ class RolloutBuffer:
                         ),
                         rand_returns[start:end].reshape([batch_size, 1]),
                         rand_advantages[start:end].reshape([batch_size, 1]),
+                        rand_masks[start:end].reshape(
+                            [batch_size] + list(self.action_probs.shape)[2:]
+                        ),
                     )
                 )
             return batches

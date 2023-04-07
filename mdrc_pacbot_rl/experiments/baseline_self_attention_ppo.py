@@ -7,7 +7,7 @@ CLI Args:
 """
 import json
 import sys
-from typing import Any, Tuple
+from typing import Any, Tuple, Union
 
 import numpy as np
 import torch
@@ -22,7 +22,7 @@ from mdrc_pacbot_rl.algorithms.ppo import train_ppo
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.algorithms.self_attention import AttnBlock, gen_pos_encoding
 from mdrc_pacbot_rl.pacman.gym import NaivePacmanGym as PacmanGym
-from mdrc_pacbot_rl.utils import copy_params, get_img_size, init_orthogonal
+from mdrc_pacbot_rl.utils import copy_params, get_img_size, init_orthogonal, init_xavier
 
 _: Any
 
@@ -30,17 +30,16 @@ _: Any
 num_envs = 32  # Number of environments to step through at once during sampling.
 train_steps = 32  # Number of steps to step through during sampling. Total # of samples is train_steps * num_envs/
 iterations = 20000  # Number of sample/train iterations.
-train_iters = 2  # Number of passes over the samples collected.
+train_iters = 1  # Number of passes over the samples collected.
 train_batch_size = 512  # Minibatch size while training models.
 discount = 0.0  # Discount factor applied to rewards.
-lambda_ = 0.7  # Lambda for GAE.
+lambda_ = 0.0  # Lambda for GAE.
 epsilon = 0.2  # Epsilon for importance sample clipping.
 eval_steps = 4  # Number of eval runs to average over.
 max_eval_steps = 300  # Max number of steps to take during each eval run.
-v_lr = 0.01  # Learning rate of the value net.
-p_lr = 0.001  # Learning rate of the policy net.
+warmup_steps = 4000  # Number of steps before dropping the learning rates.
 emb_dim = (
-    8  # Size of the input embeddings to learn, not including positional component.
+    128  # Size of the input embeddings to learn, not including positional component.
 )
 device = torch.device("cuda")
 
@@ -69,12 +68,16 @@ def process_obs(input: np.ndarray, mask: np.ndarray) -> torch.Tensor:
     return torch.from_numpy(flattened).float()
 
 
-def load_pos_and_mask(width: int, height: int) -> Tuple[np.ndarray, np.ndarray]:
+def load_pos_and_mask(
+    width: int, height: int, emb_dim: int
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Loads the positional encoding and mask from the computed data folder.
     """
     node_coords = json.load(open("computed_data/node_coords.json", "r"))
-    node_embeddings = np.load("computed_data/node_embeddings.npy")
+    node_embeddings = np.load("computed_data/graph_lap_eigvecs.npy")[:emb_dim].swapaxes(
+        0, 1
+    )  # node_embeddings.npy")
     emb_dim = node_embeddings.shape[1]
     encodings = np.zeros([width, height, emb_dim])
     mask = np.ones([width, height], dtype=np.int0)
@@ -88,6 +91,15 @@ def load_pos_and_mask(width: int, height: int) -> Tuple[np.ndarray, np.ndarray]:
         .numpy()
     )
     return encodings, mask
+
+
+def get_lr(step: int, emb_dim: int, warmup_steps: int):
+    return emb_dim ** (-0.5) * min(step ** (-0.5), step * warmup_steps ** (-1.5))
+
+
+def set_opt_lr(opt: torch.optim.Optimizer, lr):
+    for group in opt.param_groups:
+        group["lr"] = lr
 
 
 class BaseNet(nn.Module):
@@ -112,8 +124,8 @@ class BaseNet(nn.Module):
             nn.Linear(self.emb_dim * 4, self.emb_dim),
         )
         self.pos = nn.Parameter(pos_encoding, False)
-        self.attn = AttnBlock(self.emb_dim + pos_dim, 4)
-        self.linear = nn.Linear(self.emb_dim + pos_dim, out_features)
+        self.attn = AttnBlock(self.emb_dim, input_shape[0], 4)
+        self.linear = nn.Linear(self.emb_dim, out_features)
         self.relu = nn.ReLU()
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
@@ -124,11 +136,11 @@ class BaseNet(nn.Module):
             batch_size, self.input_size, self.emb_dim
         )
 
-        # A graph based positional encoding gets appended to our representation
+        # A graph based positional encoding gets added to our representation
         # embeddings, and self attention is performed. Afterwards, we maxpool
         # the results into a single vector.
         positional = self.pos.repeat([batch_size, 1, 1])
-        x = torch.concatenate([x, positional], 2)
+        x = x + positional
         x = self.attn(x)
         x = torch.max(x, 1).values
 
@@ -144,7 +156,7 @@ class ValueNet(nn.Module):
         self.net = nn.Sequential(
             BaseNet(obs_shape, 256, pos_encoding, emb_dim), nn.ReLU(), nn.Linear(256, 1)
         )
-        init_orthogonal(self)
+        init_xavier(self)
 
     def forward(self, input: torch.Tensor):
         return self.net(input)
@@ -163,12 +175,13 @@ class PolicyNet(nn.Module):
             BaseNet(obs_shape, 256, pos_encoding, emb_dim),
             nn.ReLU(),
             nn.Linear(256, action_count),
-            nn.LogSoftmax(1),
         )
-        init_orthogonal(self)
+        self.softmax = nn.LogSoftmax(1)
+        init_xavier(self)
 
-    def forward(self, input: torch.Tensor):
-        return self.net(input)
+    def forward(self, input: torch.Tensor, mask: Union[torch.Tensor, np.ndarray]):
+        x = self.net(input) * (1 - mask) + mask * -1 * 10**8
+        return self.softmax(x)
 
 
 env = SyncVectorEnv([lambda: PacmanGym() for _ in range(num_envs)])
@@ -182,14 +195,18 @@ if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
     if not obs_shape:
         raise RuntimeError("Observation space doesn't have shape")
     obs_size = torch.Size(obs_shape)
-    _, obs_mask = load_pos_and_mask(obs_size[1], obs_size[2])
+    _, obs_mask = load_pos_and_mask(obs_size[1], obs_size[2], emb_dim)
     with torch.no_grad():
-        obs = process_obs(test_env.reset()[0][np.newaxis, ...], obs_mask)
+        obs_, info = test_env.reset()
+        action_mask = np.array(list(info["action_mask"]))
+        obs = process_obs(obs_[np.newaxis, ...], obs_mask)
         for _ in range(max_eval_steps):
-            distr = Categorical(logits=p_net(obs.unsqueeze(0)).squeeze())
+            distr = Categorical(logits=p_net(obs.unsqueeze(0), action_mask).squeeze())
             action = distr.sample().item()
-            obs_, reward, done, _, _ = test_env.step(action)
+            print(distr.probs)
+            obs_, reward, done, _, info = test_env.step(action)
             obs = process_obs(obs_[np.newaxis, ...], obs_mask)
+            action_mask = np.array(list(info["action_mask"]))
             if done:
                 break
     quit()
@@ -207,8 +224,6 @@ wandb.init(
         "lambda": lambda_,
         "epsilon": epsilon,
         "max_eval_steps": max_eval_steps,
-        "v_lr": v_lr,
-        "p_lr": p_lr,
         "emb_dim": emb_dim,
     },
 )
@@ -224,19 +239,13 @@ obs_size = torch.Size(obs_shape)
 act_space = env.envs[0].action_space
 if not isinstance(act_space, Discrete):
     raise RuntimeError("Action space was not discrete")
-_pos_encoding, obs_mask = load_pos_and_mask(obs_size[1], obs_size[2])
+_pos_encoding, obs_mask = load_pos_and_mask(obs_size[1], obs_size[2], emb_dim)
 pos_encoding = torch.from_numpy(_pos_encoding).squeeze(0)
 obs_size = torch.Size([pos_encoding.shape[0], obs_size[0]])
 v_net = ValueNet(obs_size, pos_encoding, emb_dim)
 p_net = PolicyNet(obs_size, int(act_space.n), pos_encoding, emb_dim)
-v_opt = torch.optim.Adam(v_net.parameters(), lr=v_lr)
-p_opt = torch.optim.Adam(p_net.parameters(), lr=p_lr)
-v_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    v_opt, "max", patience=20, factor=0.5, min_lr=0.00001
-)
-p_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    p_opt, "max", patience=20, factor=0.5, min_lr=0.000001
-)
+v_opt = torch.optim.Adam(v_net.parameters(), lr=0.0)
+p_opt = torch.optim.Adam(p_net.parameters(), lr=0.0)
 buffer = RolloutBuffer(
     torch.Size(obs_size),
     torch.Size((1,)),
@@ -247,21 +256,22 @@ buffer = RolloutBuffer(
     device,
 )
 
-obs = process_obs(env.reset()[0], obs_mask)
+obs_, info = env.reset()
+obs = process_obs(obs_, obs_mask)
+action_mask = np.array(list(info["action_mask"]))
 smooth_eval_score = 0.0
 last_eval_score = 0.0
 anneal_discount_after = 1000
 last_discount = discount
 discount_change = 0.00005
-last_v_schedule = v_scheduler.state_dict()
-last_p_schedule = p_scheduler.state_dict()
 for step in tqdm(range(iterations), position=0):
     # Collect experience
     with torch.no_grad():
         for _ in tqdm(range(train_steps), position=1):
-            action_probs = p_net(obs)
+            action_probs = p_net(obs, action_mask)
             actions = Categorical(logits=action_probs).sample().numpy()
-            obs_, rewards, dones, truncs, _ = env.step(actions)
+            obs_, rewards, dones, truncs, info = env.step(actions)
+            action_mask = np.array(list(info["action_mask"]))
             buffer.insert_step(
                 obs,
                 torch.from_numpy(actions).unsqueeze(-1),
@@ -297,15 +307,17 @@ for step in tqdm(range(iterations), position=0):
         pred_reward_total = 0
         score_total = 0
         entropy_total = 0.0
-        eval_obs = process_obs(test_env.reset()[0][np.newaxis, ...], obs_mask).squeeze(
-            0
-        )
+        obs_, info = test_env.reset()
+        eval_obs = process_obs(obs_[np.newaxis, ...], obs_mask).squeeze(0)
+        eval_action_mask = np.array(list(info["action_mask"]))
         for _ in range(eval_steps):
             avg_entropy = 0.0
             steps_taken = 0
             score = 0
             for _ in range(max_eval_steps):
-                distr = Categorical(logits=p_net(eval_obs.unsqueeze(0)).squeeze())
+                distr = Categorical(
+                    logits=p_net(eval_obs.unsqueeze(0), eval_action_mask).squeeze()
+                )
                 action = distr.sample().item()
                 score = test_env.score()
                 pred_reward_total += v_net(eval_obs.unsqueeze(0)).squeeze().item()
@@ -315,19 +327,17 @@ for step in tqdm(range(iterations), position=0):
                 reward_total += reward
                 avg_entropy += distr.entropy()
                 if eval_done or eval_trunc:
-                    eval_obs = process_obs(
-                        test_env.reset()[0][np.newaxis, ...], obs_mask
-                    ).squeeze(0)
+                    obs_, info = test_env.reset()
+                    eval_obs = process_obs(obs_[np.newaxis, ...], obs_mask).squeeze(0)
+                    eval_action_mask = np.array(list(info["action_mask"]))
                     break
             avg_entropy /= steps_taken
             entropy_total += avg_entropy
             score_total += score
 
     # Update learning rate
-    smooth_update = 0.04
-    smooth_eval_score += smooth_update * (score_total / eval_steps - smooth_eval_score)
-    v_scheduler.step(smooth_eval_score)
-    p_scheduler.step(smooth_eval_score)
+    set_opt_lr(v_opt, get_lr(step + 1, emb_dim, warmup_steps) * 1.0)
+    set_opt_lr(p_opt, get_lr(step + 1, emb_dim, warmup_steps) * 0.1)
 
     wandb.log(
         {
@@ -344,26 +354,24 @@ for step in tqdm(range(iterations), position=0):
     )
 
     # Perform backups
-    if (step + 1) % 200 == 0:
-        if smooth_eval_score < last_eval_score:
-            v_net.load_state_dict(torch.load("temp/VNet.pt").state_dict())
-            p_net.load_state_dict(torch.load("temp/PNet.pt").state_dict())
-            v_scheduler.load_state_dict(last_v_schedule)
-            p_scheduler.load_state_dict(last_p_schedule)
-            discount = last_discount
+    smooth_update = 0.04
+    smooth_eval_score += smooth_update * (score_total / eval_steps - smooth_eval_score)
+    # if (step + 1) % 200 == 0:
+    #     if smooth_eval_score < last_eval_score:
+    #         v_net.load_state_dict(torch.load("temp/VNet.pt").state_dict())
+    #         p_net.load_state_dict(torch.load("temp/PNet.pt").state_dict())
+    #         discount = last_discount
 
     if (step + 1) % 10 == 0:
-        if smooth_eval_score > last_eval_score:
+        if smooth_eval_score >= last_eval_score:
             torch.save(v_net, "temp/VNet.pt")
             torch.save(p_net, "temp/PNet.pt")
 
             last_eval_score = smooth_eval_score
-            last_v_schedule = v_scheduler.state_dict()
-            last_p_schedule = p_scheduler.state_dict()
             last_discount = discount
-            
-    if step > anneal_discount_after:
-        discount = min(0.9, discount + discount_change)
+
+    # if step > anneal_discount_after:
+    #     discount = min(0.9, discount + discount_change)
 
 # Save artifacts
 torch.save(v_net, "temp/VNet.pt")

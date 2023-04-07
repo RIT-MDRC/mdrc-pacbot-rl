@@ -35,23 +35,34 @@ def train_ppo(
 
     total_v_loss = 0.0
     total_p_loss = 0.0
+
+    p_opt.zero_grad()
+    v_opt.zero_grad()
+
     for _ in tqdm(range(train_iters), position=1):
         batches = buffer.samples(train_batch_size, discount, lambda_, v_net_frozen)
-        for prev_states, actions, action_probs, returns, advantages in batches:
+        for (
+            prev_states,
+            actions,
+            action_probs,
+            returns,
+            advantages,
+            action_masks,
+        ) in batches:
             # Move batch to device if applicable
             prev_states = prev_states.to(device=device)
             actions = actions.to(device=device)
             action_probs = action_probs.to(device=device)
             returns = returns.to(device=device)
             advantages = advantages.to(device=device)
+            action_masks = action_masks.to(device=device)
 
             # Train policy network
             with torch.no_grad():
                 old_act_probs = Categorical(logits=action_probs).log_prob(
                     actions.squeeze()
                 )
-            p_opt.zero_grad()
-            new_log_probs = p_net(prev_states)
+            new_log_probs = p_net(prev_states, action_masks)
             new_act_probs = Categorical(logits=new_log_probs).log_prob(
                 actions.squeeze()
             )
@@ -63,12 +74,15 @@ def train_ppo(
             total_p_loss += p_loss.item()
 
             # Train value network
-            v_opt.zero_grad()
             diff = v_net(prev_states) - returns
             v_loss = (diff * diff).mean()
             v_loss.backward()
             v_opt.step()
             total_v_loss += v_loss.item()
+
+    # We use gradient accumulation to approximate larger batch sizes
+    p_opt.step()
+    v_opt.step()
 
     if device.type != "cpu":
         p_net.cpu()

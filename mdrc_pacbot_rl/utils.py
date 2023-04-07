@@ -41,3 +41,14 @@ def init_orthogonal(src: nn.Module):
         for param in src.parameters():
             if len(param.size()) >= 2:
                 param.copy_(torch.nn.init.orthogonal_(param.data))
+
+
+def init_xavier(src: nn.Module):
+    """
+    Initializes model weights using the Xavier normal distribution.
+    This has been shown to have good results for transformers.
+    """
+    with torch.no_grad():
+        for param in src.parameters():
+            if len(param.size()) >= 2:
+                param.copy_(torch.nn.init.xavier_normal_(param.data))
