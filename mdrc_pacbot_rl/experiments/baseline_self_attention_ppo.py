@@ -20,9 +20,9 @@ from tqdm import tqdm
 
 from mdrc_pacbot_rl.algorithms.ppo import train_ppo
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
-from mdrc_pacbot_rl.algorithms.self_attention import AttnBlock, gen_pos_encoding
+from mdrc_pacbot_rl.algorithms.self_attention import AttnBlock
 from mdrc_pacbot_rl.pacman.gym import NaivePacmanGym as PacmanGym
-from mdrc_pacbot_rl.utils import copy_params, get_img_size, init_orthogonal, init_xavier
+from mdrc_pacbot_rl.utils import init_xavier
 
 _: Any
 
@@ -117,7 +117,6 @@ class BaseNet(nn.Module):
         nn.Module.__init__(self)
         self.input_size = input_shape[0]
         self.emb_dim = emb_dim
-        pos_dim = pos_encoding.shape[1]
         self.expand = nn.Sequential(
             nn.Linear(input_shape[1], self.emb_dim * 4),
             nn.ReLU(),
@@ -356,11 +355,6 @@ for step in tqdm(range(iterations), position=0):
     # Perform backups
     smooth_update = 0.04
     smooth_eval_score += smooth_update * (score_total / eval_steps - smooth_eval_score)
-    # if (step + 1) % 200 == 0:
-    #     if smooth_eval_score < last_eval_score:
-    #         v_net.load_state_dict(torch.load("temp/VNet.pt").state_dict())
-    #         p_net.load_state_dict(torch.load("temp/PNet.pt").state_dict())
-    #         discount = last_discount
 
     if (step + 1) % 10 == 0:
         if smooth_eval_score >= last_eval_score:
@@ -369,9 +363,6 @@ for step in tqdm(range(iterations), position=0):
 
             last_eval_score = smooth_eval_score
             last_discount = discount
-
-    # if step > anneal_discount_after:
-    #     discount = min(0.9, discount + discount_change)
 
 # Save artifacts
 torch.save(v_net, "temp/VNet.pt")
