@@ -570,9 +570,9 @@ class SelfAttentionPacmanGym(BasePacmanGym):
         self.action_space = Discrete(5)
         self.ticks_per_step = ticks_per_step
         BasePacmanGym.__init__(self, random_start, render_mode)
-        grid = np.array(self.game_state.grid)
-        self.entities = np.zeros([4] + list(grid.shape))
-        self.pacman = np.zeros(grid.shape)
+        grid_shape = [GRID_WIDTH, GRID_HEIGHT]
+        self.entities = np.zeros([4] + grid_shape)
+        self.pacman = np.zeros(grid_shape)
 
     def step(self, action):
         # Update Pacman pos
