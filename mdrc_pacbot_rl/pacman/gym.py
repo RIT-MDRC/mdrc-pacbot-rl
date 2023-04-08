@@ -87,15 +87,15 @@ class BasePacmanGym(gym.Env):
         if self.random_start:
             pac_pos = random.choice(self.valid_cells)
             self.game_state.pacbot.update(pac_pos)
-            self.game_state.red.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
-            self.game_state.red.pos["next"] = self.game_state.red.pos["current"]
-            self.game_state.pink.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
-            self.game_state.pink.pos["next"] = self.game_state.pink.pos["current"]
-            self.game_state.orange.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
-            self.game_state.orange.pos["next"] = self.game_state.orange.pos["current"]
-            self.game_state.blue.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
-            self.game_state.blue.pos["next"] = self.game_state.blue.pos["current"]
-            self.game_state.state = random.choice([variables.chase, variables.scatter])
+            # self.game_state.red.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
+            # self.game_state.red.pos["next"] = self.game_state.red.pos["current"]
+            # self.game_state.pink.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
+            # self.game_state.pink.pos["next"] = self.game_state.pink.pos["current"]
+            # self.game_state.orange.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
+            # self.game_state.orange.pos["next"] = self.game_state.orange.pos["current"]
+            # self.game_state.blue.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
+            # self.game_state.blue.pos["next"] = self.game_state.blue.pos["current"]
+            # self.game_state.state = random.choice([variables.chase, variables.scatter])
         self.game_state.unpause()
         return self.create_obs(), {}
 
@@ -281,7 +281,6 @@ class NaivePacmanGym(BasePacmanGym):
 class SemanticChannelPacmanGym(BasePacmanGym):
     """
     This environment's observation space is split across channels with more semantic meaning.
-
     Observation: Box space of 5x28x31. Dims 2 and 3 are the width and height.
     For the first dimension, the channels are:
         1. Wall channel: Binary channel indicating 1 if wall, 0 if empty.
@@ -405,7 +404,6 @@ class SemanticChannelPacmanGym(BasePacmanGym):
 class SemanticPacmanGym(BasePacmanGym):
     """
     This environment's observation space has more semantic meaning. [...]
-
     Observation: [...]
     Action: Discrete space of nothing, up, down, left, right.
     Rewards: Log normalized difference between score after and before action.
@@ -612,7 +610,7 @@ class SelfAttentionPacmanGym(BasePacmanGym):
         ghost = np.zeros(grid.shape)
         for pos in entity_positions:
             ghost[pos[0]][pos[1]] = 1
-        fright = self.game_state.state == variables.frightened
+        fright = self.game_state.is_frightened
         fright_ghost = np.where(ghost > 0, 1, 0) * int(fright)
         reward = np.log(
             1
@@ -633,7 +631,7 @@ class SelfAttentionPacmanGym(BasePacmanGym):
         state = np.zeros([3] + list(grid.shape))
         for i, pos in enumerate(entity_positions):
             self.entities[i][pos[0]][pos[1]] = 1
-            state[self.game_state.state - 1][pos[0]][pos[1]] = 1
+            state[self.game_state.state() - 1][pos[0]][pos[1]] = 1
 
         pac_pos = self.game_state.pacbot.pos
         self.pacman *= 0.5
