@@ -63,6 +63,19 @@ impl GhostPosWrapper {
             }
         })
     }
+
+    fn __setitem__(&self, item: &str, pos: (usize, usize)) -> PyResult<()> {
+        Python::with_gil(|py| {
+            let game_state = self.game_state.borrow(py);
+            let mut ghost = (self.get_ghost)(&game_state).borrow_mut();
+            match item {
+                "current" => ghost.current_pos = pos,
+                "next" => ghost.next_pos = pos,
+                _ => return Err(PyKeyError::new_err(item.to_owned())),
+            }
+            Ok(())
+        })
+    }
 }
 
 pub(super) fn wrap_ghost_agent(
