@@ -610,7 +610,7 @@ class SelfAttentionPacmanGym(BasePacmanGym):
         ghost = np.zeros(grid.shape)
         for pos in entity_positions:
             ghost[pos[0]][pos[1]] = 1
-        fright = self.game_state.is_frightened
+        fright = self.game_state.is_frightened()
         fright_ghost = np.where(ghost > 0, 1, 0) * int(fright)
         reward = np.log(
             1
