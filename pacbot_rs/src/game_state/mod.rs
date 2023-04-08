@@ -114,6 +114,11 @@ impl GameState {
     pub fn is_frightened(&self) -> bool {
         self.state == GameStateState::Frightened
     }
+    
+    /// Returns the current ghost state (scatter, chase, frightened) as an integer.
+    pub fn state(&self) -> u32 {
+        self.state as u32
+    }
 
     #[new]
     pub fn new() -> Self {

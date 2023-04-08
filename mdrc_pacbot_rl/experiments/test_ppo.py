@@ -223,7 +223,7 @@ for _ in tqdm(range(iterations), position=0):
     for _ in range(train_iters):
         # The rollout buffer provides randomized minibatches of samples
         batches = buffer.samples(train_batch_size, discount, lambda_, v_net)
-        for prev_states, actions, action_probs, returns, advantages in batches:
+        for prev_states, actions, action_probs, returns, advantages, _ in batches:
             # Train policy network.
             #
             # First, we get the log probabilities of taking the actions we took
