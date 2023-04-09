@@ -6,10 +6,13 @@ pub mod heuristic_values;
 pub mod observations;
 pub mod pacbot;
 pub mod variables;
+pub mod particle_filter;
 
 use pyo3::prelude::*;
 
 use game_state::GameState;
+
+extern crate vecmath;
 
 /// A Python module containing Rust implementations of the PacBot environment.
 #[pymodule]
