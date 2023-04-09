@@ -87,14 +87,14 @@ class BasePacmanGym(gym.Env):
         if self.random_start:
             pac_pos = random.choice(self.valid_cells)
             self.game_state.pacbot.update(pac_pos)
-            # self.game_state.red.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
-            # self.game_state.red.pos["next"] = self.game_state.red.pos["current"]
-            # self.game_state.pink.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
-            # self.game_state.pink.pos["next"] = self.game_state.pink.pos["current"]
-            # self.game_state.orange.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
-            # self.game_state.orange.pos["next"] = self.game_state.orange.pos["current"]
-            # self.game_state.blue.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
-            # self.game_state.blue.pos["next"] = self.game_state.blue.pos["current"]
+            self.game_state.red.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
+            self.game_state.red.pos["next"] = self.game_state.red.pos["current"]
+            self.game_state.pink.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
+            self.game_state.pink.pos["next"] = self.game_state.pink.pos["current"]
+            self.game_state.orange.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
+            self.game_state.orange.pos["next"] = self.game_state.orange.pos["current"]
+            self.game_state.blue.pos["current"] = self.get_pos_with_dist(pac_pos, 4)
+            self.game_state.blue.pos["next"] = self.game_state.blue.pos["current"]
             # self.game_state.state = random.choice([variables.chase, variables.scatter])
         self.game_state.unpause()
         return self.create_obs(), {}
