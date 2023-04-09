@@ -21,6 +21,7 @@ def train_ppo(
     discount: float,
     lambda_: float,
     epsilon: float,
+    gradient_steps: int = 1,
 ) -> Tuple[float, float]:
     """
     Performs the PPO training loop.
@@ -36,9 +37,9 @@ def train_ppo(
     total_v_loss = 0.0
     total_p_loss = 0.0
 
+    gradient_step = 1
     p_opt.zero_grad()
     v_opt.zero_grad()
-
     for _ in tqdm(range(train_iters), position=1):
         batches = buffer.samples(train_batch_size, discount, lambda_, v_net_frozen)
         for (
@@ -70,19 +71,22 @@ def train_ppo(
             term2 = (1.0 + epsilon * advantages.sign()) * advantages
             p_loss = -term1.min(term2).mean()
             p_loss.backward()
-            p_opt.step()
             total_p_loss += p_loss.item()
 
             # Train value network
             diff = v_net(prev_states) - returns
             v_loss = (diff * diff).mean()
             v_loss.backward()
-            v_opt.step()
             total_v_loss += v_loss.item()
 
-    # We use gradient accumulation to approximate larger batch sizes
-    p_opt.step()
-    v_opt.step()
+            # We use gradient accumulation to approximate larger batch sizes
+            if gradient_step % gradient_steps == 0:
+                p_opt.step()
+                v_opt.step()
+                p_opt.zero_grad()
+                v_opt.zero_grad()
+                gradient_step = 0
+            gradient_step += 1
 
     if device.type != "cpu":
         p_net.cpu()

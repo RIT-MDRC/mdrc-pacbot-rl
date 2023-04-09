@@ -254,10 +254,12 @@ class NaivePacmanGym(BasePacmanGym):
         if reward == float("Nan"):
             reward = 0
         self.last_score = self.game_state.score
+        
+        action_mask = self.action_mask()
 
         self.handle_rendering()
 
-        return self.create_obs(), reward, done, {}, {}
+        return self.create_obs(), reward, done, False, {"action_mask": action_mask}
 
     def create_obs(self):
         fright = self.game_state.is_frightened()
@@ -276,6 +278,11 @@ class NaivePacmanGym(BasePacmanGym):
             entities[pos[0]][pos[1]] = -1 if fright and i > 0 else i + 1
         obs = np.stack([grid, entities])
         return obs
+    
+    def reset(self):
+        obs, info = super().reset()
+        info["action_mask"] = self.action_mask()
+        return obs, info
 
 
 class SemanticChannelPacmanGym(BasePacmanGym):
