@@ -6,7 +6,8 @@ CLI Args:
     visualization.
 """
 import sys
-from typing import Any
+from typing import Any, Union
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -36,16 +37,16 @@ eval_steps = 8  # Number of eval runs to average over.
 max_eval_steps = 300  # Max number of steps to take during each eval run.
 v_lr = 0.001  # Learning rate of the value net.
 p_lr = 0.0001  # Learning rate of the policy net.
-device = torch.device("cpu")
+device = torch.device("cuda")
 
 
 class ValueNet(nn.Module):
     def __init__(self, obs_shape: torch.Size):
         nn.Module.__init__(self)
         w, h = obs_shape[1:]
-        self.cnn1 = nn.Conv2d(obs_shape[0], 8, 2)
+        self.cnn1 = nn.Conv2d(obs_shape[0], 8, 5)
         h, w = get_img_size(h, w, self.cnn1)
-        self.cnn2 = nn.Conv2d(8, 16, 2)
+        self.cnn2 = nn.Conv2d(8, 16, 3)
         h, w = get_img_size(h, w, self.cnn2)
         flat_dim = h * w * self.cnn2.out_channels
         self.v_layer1 = nn.Linear(flat_dim, 256)
@@ -72,9 +73,9 @@ class PolicyNet(nn.Module):
     def __init__(self, obs_shape: torch.Size, action_count: int):
         nn.Module.__init__(self)
         w, h = obs_shape[1:]
-        self.cnn1 = nn.Conv2d(obs_shape[0], 8, 2)
+        self.cnn1 = nn.Conv2d(obs_shape[0], 8, 5)
         h, w = get_img_size(h, w, self.cnn1)
-        self.cnn2 = nn.Conv2d(8, 16, 2)
+        self.cnn2 = nn.Conv2d(8, 16, 3)
         h, w = get_img_size(h, w, self.cnn2)
         flat_dim = h * w * self.cnn2.out_channels
         self.a_layer1 = nn.Linear(flat_dim, 256)
@@ -84,7 +85,7 @@ class PolicyNet(nn.Module):
         self.logits = nn.LogSoftmax(1)
         init_orthogonal(self)
 
-    def forward(self, input: torch.Tensor):
+    def forward(self, input: torch.Tensor, mask: Union[torch.Tensor, np.ndarray]):
         x = self.cnn1(input)
         x = self.relu(x)
         x = self.cnn2(x)
@@ -95,6 +96,7 @@ class PolicyNet(nn.Module):
         x = self.a_layer2(x)
         x = self.relu(x)
         x = self.a_layer3(x)
+        x = x * (1 - mask) + mask * -1 * 10**8
         x = self.logits(x)
         return x
 
@@ -106,13 +108,21 @@ test_env = GetAllPelletsEnv()
 if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
     test_env = GetAllPelletsEnv(render_mode="human")
     p_net = torch.load("temp/PNet.pt")
+    obs_shape = test_env.observation_space.shape
+    if not obs_shape:
+        raise RuntimeError("Observation space doesn't have shape")
+    obs_size = torch.Size(obs_shape)
     with torch.no_grad():
-        obs = torch.Tensor(test_env.reset()[0])
+        obs_, info = test_env.reset()
+        action_mask = np.array(list(info["action_mask"]))
+        obs = torch.from_numpy(obs_).float()
         for _ in range(max_eval_steps):
-            distr = Categorical(logits=p_net(obs.unsqueeze(0)).squeeze())
+            distr = Categorical(logits=p_net(obs.unsqueeze(0), action_mask).squeeze())
             action = distr.sample().item()
-            obs_, reward, done, _, _ = test_env.step(action)
-            obs = torch.Tensor(obs_)
+            obs_, reward, done, _, info = test_env.step(action)
+            print(distr.probs, reward)
+            obs = torch.from_numpy(obs_).float()
+            action_mask = np.array(list(info["action_mask"]))
             if done:
                 break
     quit()
@@ -160,14 +170,16 @@ buffer = RolloutBuffer(
     device,
 )
 
-obs = torch.Tensor(env.reset()[0])
-for _ in tqdm(range(iterations), position=0):
+obs_, info = env.reset()
+obs = torch.from_numpy(obs_)
+action_mask = np.array(list(info["action_mask"]))
+for step in tqdm(range(iterations), position=0):
     # Collect experience
     with torch.no_grad():
-        for _ in tqdm(range(train_steps), position=1):
-            action_probs = p_net(obs)
+        for step in tqdm(range(train_steps), position=1):
+            action_probs = p_net(obs, action_mask)
             actions = Categorical(logits=action_probs).sample().numpy()
-            obs_, rewards, dones, truncs, _ = env.step(actions)
+            obs_, rewards, dones, truncs, info = env.step(actions)
             buffer.insert_step(
                 obs,
                 torch.from_numpy(actions).unsqueeze(-1),
@@ -175,8 +187,10 @@ for _ in tqdm(range(iterations), position=0):
                 rewards,
                 dones,
                 truncs,
+                torch.Tensor(action_mask),
             )
             obs = torch.from_numpy(obs_)
+            action_mask = np.array(list(info["action_mask"]))
         buffer.insert_final_step(obs)
 
     # Train
@@ -192,6 +206,7 @@ for _ in tqdm(range(iterations), position=0):
         discount,
         lambda_,
         epsilon,
+        gradient_steps=1,
     )
     buffer.clear()
 
@@ -201,26 +216,40 @@ for _ in tqdm(range(iterations), position=0):
         # Visualize
         reward_total = 0
         pred_reward_total = 0
+        score_total = 0
         entropy_total = 0.0
-        eval_obs = torch.Tensor(test_env.reset()[0])
+        obs_, info = test_env.reset()
+        eval_obs = torch.from_numpy(obs_).float()
+        eval_action_mask = np.array(list(info["action_mask"]))
         for _ in range(eval_steps):
             avg_entropy = 0.0
             steps_taken = 0
             score = 0
             for _ in range(max_eval_steps):
-                distr = Categorical(logits=p_net(eval_obs.unsqueeze(0)).squeeze())
+                distr = Categorical(
+                    logits=p_net(eval_obs.unsqueeze(0), eval_action_mask).squeeze()
+                )
                 action = distr.sample().item()
                 pred_reward_total += v_net(eval_obs.unsqueeze(0)).squeeze().item()
-                obs_, reward, eval_done, eval_trunc, _ = test_env.step(action)
-                eval_obs = torch.Tensor(obs_)
+                obs_, reward, eval_done, eval_trunc, info = test_env.step(action)
+                eval_obs = torch.from_numpy(obs_).float()
+                eval_action_mask = np.array(list(info["action_mask"]))
                 steps_taken += 1
                 reward_total += reward
                 avg_entropy += distr.entropy()
                 if eval_done or eval_trunc:
-                    eval_obs = torch.Tensor(test_env.reset()[0])
+                    obs_, info = test_env.reset()
+                    eval_obs = torch.from_numpy(obs_).float()
+                    eval_action_mask = np.array(list(info["action_mask"]))
                     break
             avg_entropy /= steps_taken
             entropy_total += avg_entropy
+            score_total += score
+            
+    # Perform backups
+    if (step + 1) % 10 == 0:
+        torch.save(v_net, "temp/VNet.pt")
+        torch.save(p_net, "temp/PNet.pt")
 
     wandb.log(
         {

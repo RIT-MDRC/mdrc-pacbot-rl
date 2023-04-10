@@ -20,7 +20,7 @@ from tqdm import tqdm
 from mdrc_pacbot_rl.algorithms.ppo import train_ppo
 
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
-from mdrc_pacbot_rl.pacman.gym import SelfAttentionPacmanGym as PacmanGym
+from mdrc_pacbot_rl.pacman.gym import NaivePacmanGym as PacmanGym
 from mdrc_pacbot_rl.utils import get_img_size, init_orthogonal
 
 _: Any
@@ -41,18 +41,15 @@ p_lr = 0.00001  # Learning rate of the policy net.
 device = torch.device("cuda")
 
 
-class ValueNet(nn.Module):
+class BaseNet(nn.Module):
     def __init__(self, obs_shape: torch.Size):
         nn.Module.__init__(self)
         w, h = obs_shape[1:]
-        self.cnn1 = nn.Conv2d(obs_shape[0], 4, 3, 2)
+        self.cnn1 = nn.Conv2d(obs_shape[0], 12, 3)
         h, w = get_img_size(h, w, self.cnn1)
-        self.cnn2 = nn.Conv2d(4, 8, 3, 2)
+        self.cnn2 = nn.Conv2d(12, 16, 3)
         h, w = get_img_size(h, w, self.cnn2)
-        flat_dim = h * w * self.cnn2.out_channels
-        self.v_layer1 = nn.Linear(flat_dim, 256)
-        self.v_layer2 = nn.Linear(256, 256)
-        self.v_layer3 = nn.Linear(256, 1)
+        self.flat_dim = h * w * self.cnn2.out_channels
         self.relu = nn.ReLU()
         init_orthogonal(self)
 
@@ -61,23 +58,16 @@ class ValueNet(nn.Module):
         x = self.relu(x)
         x = self.cnn2(x)
         x = x.flatten(1)
-        x = self.relu(x)
-        x = self.v_layer1(x)
-        x = self.relu(x)
-        x = self.v_layer2(x)
-        x = self.relu(x)
-        x = self.v_layer3(x)
         return x
 
-class NewValueNet(nn.Module):
-    def __init__(self, base_net: nn.Module, base_out: int, obs_shape: torch.Size):
+
+class ValueNet(nn.Module):
+    def __init__(self, obs_shape: torch.Size):
         nn.Module.__init__(self)
-        self.base_net = base_net
-        for module in self.base_net.modules():
-            module.requires_grad_(False)
-        self.v_layer1 = nn.Linear(base_out, 1024)
-        self.v_layer2 = nn.Linear(1024, 1024)
-        self.v_layer3 = nn.Linear(1024, 1)
+        self.base_net = BaseNet(obs_shape)
+        self.v_layer1 = nn.Linear(self.base_net.flat_dim, 512)
+        self.v_layer2 = nn.Linear(512, 512)
+        self.v_layer3 = nn.Linear(512, 1)
         self.relu = nn.ReLU()
         init_orthogonal(self)
 
@@ -93,14 +83,12 @@ class NewValueNet(nn.Module):
 
 
 class PolicyNet(nn.Module):
-    def __init__(self, base_net: nn.Module, base_out: int, obs_shape: torch.Size, action_count: int):
+    def __init__(self, obs_shape: torch.Size, action_count: int):
         nn.Module.__init__(self)
-        self.base_net = base_net
-        for module in self.base_net.modules():
-            module.requires_grad_(False)
-        self.a_layer1 = nn.Linear(base_out, 1024)
-        self.a_layer2 = nn.Linear(1024, 1024)
-        self.a_layer3 = nn.Linear(1024, action_count)
+        self.base_net = BaseNet(obs_shape)
+        self.a_layer1 = nn.Linear(self.base_net.flat_dim, 512)
+        self.a_layer2 = nn.Linear(512, 512)
+        self.a_layer3 = nn.Linear(512, action_count)
         self.relu = nn.ReLU()
         self.logits = nn.LogSoftmax(1)
         init_orthogonal(self)
@@ -113,7 +101,7 @@ class PolicyNet(nn.Module):
         x = self.a_layer2(x)
         x = self.relu(x)
         x = self.a_layer3(x)
-        x = torch.where(~torch.tensor(mask).bool(), x, -1 * 10**8)
+        x = x * (1 - mask) + mask * -1 * 10**8
         return self.logits(x)
 
 
@@ -172,10 +160,8 @@ obs_size = torch.Size(obs_shape)
 act_space = env.envs[0].action_space
 if not isinstance(act_space, Discrete):
     raise RuntimeError("Action space was not discrete")
-base_net = torch.load("temp/BaseNet.pt")
-base_net.v_layer3 = nn.Identity()
-v_net = NewValueNet(copy.deepcopy(base_net), 256, torch.Size(obs_shape))
-p_net = PolicyNet(base_net, 256, obs_size, int(act_space.n))
+v_net = ValueNet(torch.Size(obs_shape))
+p_net = PolicyNet(obs_size, int(act_space.n))
 v_opt = torch.optim.Adam(v_net.parameters(), lr=v_lr)
 p_opt = torch.optim.Adam(p_net.parameters(), lr=p_lr)
 buffer = RolloutBuffer(
@@ -200,7 +186,6 @@ for step in tqdm(range(iterations), position=0):
             action_probs = p_net(obs, action_mask)
             actions = Categorical(logits=action_probs).sample().numpy()
             obs_, rewards, dones, truncs, info = env.step(actions)
-            action_mask = np.array(list(info["action_mask"]))
             buffer.insert_step(
                 obs,
                 torch.from_numpy(actions).unsqueeze(-1),
@@ -208,7 +193,9 @@ for step in tqdm(range(iterations), position=0):
                 rewards,
                 dones,
                 truncs,
+                torch.Tensor(action_mask),
             )
+            action_mask = np.array(list(info["action_mask"]))
             obs = torch.from_numpy(obs_)
         buffer.insert_final_step(obs)
 
@@ -251,8 +238,9 @@ for step in tqdm(range(iterations), position=0):
                 action = distr.sample().item()
                 score = test_env.score()
                 pred_reward_total += v_net(eval_obs.unsqueeze(0)).squeeze().item()
-                obs_, reward, eval_done, eval_trunc, _ = test_env.step(action)
+                obs_, reward, eval_done, eval_trunc, info = test_env.step(action)
                 eval_obs = torch.from_numpy(obs_).float()
+                eval_action_mask = np.array(list(info["action_mask"]))
                 steps_taken += 1
                 reward_total += reward
                 avg_entropy += distr.entropy()
@@ -280,7 +268,6 @@ for step in tqdm(range(iterations), position=0):
     # Perform backups
     smooth_update = 0.04
     smooth_eval_score += smooth_update * (score_total / eval_steps - smooth_eval_score)
-
     if (step + 1) % 10 == 0:
         if smooth_eval_score >= last_eval_score:
             torch.save(v_net, "temp/VNetBest.pt")
@@ -288,7 +275,7 @@ for step in tqdm(range(iterations), position=0):
 
             last_eval_score = smooth_eval_score
             last_discount = discount
-        
+
         torch.save(v_net, "temp/VNet.pt")
         torch.save(p_net, "temp/PNet.pt")
 

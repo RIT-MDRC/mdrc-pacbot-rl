@@ -270,7 +270,6 @@ for step in tqdm(range(iterations), position=0):
             action_probs = p_net(obs, action_mask)
             actions = Categorical(logits=action_probs).sample().numpy()
             obs_, rewards, dones, truncs, info = env.step(actions)
-            action_mask = np.array(list(info["action_mask"]))
             buffer.insert_step(
                 obs,
                 torch.from_numpy(actions).unsqueeze(-1),
@@ -278,8 +277,10 @@ for step in tqdm(range(iterations), position=0):
                 rewards,
                 dones,
                 truncs,
+                torch.Tensor(action_mask),
             )
             obs = process_obs(obs_, obs_mask)
+            action_mask = np.array(list(info["action_mask"]))
         buffer.insert_final_step(obs)
 
     # Train
@@ -320,8 +321,9 @@ for step in tqdm(range(iterations), position=0):
                 action = distr.sample().item()
                 score = test_env.score()
                 pred_reward_total += v_net(eval_obs.unsqueeze(0)).squeeze().item()
-                obs_, reward, eval_done, eval_trunc, _ = test_env.step(action)
+                obs_, reward, eval_done, eval_trunc, info = test_env.step(action)
                 eval_obs = process_obs(obs_[np.newaxis, ...], obs_mask).squeeze(0)
+                eval_action_mask = np.array(list(info["action_mask"]))
                 steps_taken += 1
                 reward_total += reward
                 avg_entropy += distr.entropy()
@@ -358,11 +360,13 @@ for step in tqdm(range(iterations), position=0):
 
     if (step + 1) % 10 == 0:
         if smooth_eval_score >= last_eval_score:
-            torch.save(v_net, "temp/VNet.pt")
-            torch.save(p_net, "temp/PNet.pt")
+            torch.save(v_net, "temp/VNetBest.pt")
+            torch.save(p_net, "temp/PNetBest.pt")
+        torch.save(v_net, "temp/VNet.pt")
+        torch.save(p_net, "temp/PNet.pt")
 
-            last_eval_score = smooth_eval_score
-            last_discount = discount
+        last_eval_score = smooth_eval_score
+        last_discount = discount
 
 # Save artifacts
 torch.save(v_net, "temp/VNet.pt")

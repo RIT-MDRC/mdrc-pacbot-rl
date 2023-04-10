@@ -144,6 +144,7 @@ def run(config: dict):
                     rewards,
                     dones,
                     truncs,
+                    None,
                 )
                 obs = torch.from_numpy(obs_)
                 if done:

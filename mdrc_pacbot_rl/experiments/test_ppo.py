@@ -206,6 +206,7 @@ for _ in tqdm(range(iterations), position=0):
                 rewards,
                 dones,
                 truncs,
+                None,
             )
             obs = torch.from_numpy(obs_)
             if done:

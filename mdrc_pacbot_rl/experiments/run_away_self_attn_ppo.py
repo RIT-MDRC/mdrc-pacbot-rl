@@ -205,6 +205,7 @@ for _ in tqdm(range(iterations), position=0):
                 rewards,
                 dones,
                 truncs,
+                None,
             )
             obs = torch.tensor(obs_)
         buffer.insert_final_step(obs)

@@ -118,6 +118,22 @@ class BaseMicroGym(gym.Env):
                 self.surface.set_at((x, y), color)
         self.surface.set_at((self.pos[0], self.pos[1]), (255, 255, 0))
 
+    def action_mask(self):
+        """
+        Returns the current action mask.
+        """
+        mask = [0, 0, 0, 0, 0]
+        pos = self.pos
+        if pos[1] == GRID_SIZE - 1 or GRID[pos[0]][pos[1] + 1] == 1:
+            mask[1] = 1
+        if pos[1] == 0 or GRID[pos[0]][pos[1] - 1] == 1:
+            mask[2] = 1
+        if pos[0] == 0 or GRID[pos[0] - 1][pos[1]] == 1:
+            mask[3] = 1
+        if pos[0] == GRID_SIZE - 1 or GRID[pos[0] + 1][pos[1]] == 1:
+            mask[4] = 1
+        return mask
+
 
 class GetAllPelletsEnv(BaseMicroGym):
     """
@@ -154,14 +170,16 @@ class GetAllPelletsEnv(BaseMicroGym):
 
         self.handle_rendering()
 
-        return obs, reward, done, trunc, {}
+        return obs, reward, done, trunc, {"action_mask": self.action_mask()}
 
     def reset(self):
         super().reset()
         self.pellets = 1.0 - self.grid
         pacman = np.zeros([GRID_SIZE, GRID_SIZE])
         pacman[self.pos[0]][self.pos[1]] = 1
-        return np.stack([self.grid, self.pellets, pacman]), {}
+        return np.stack([self.grid, self.pellets, pacman]), {
+            "action_mask": self.action_mask()
+        }
 
     def update_surface(self):
         self.draw_grid_and_pacman()
@@ -232,16 +250,17 @@ class RunAwayEnv(BaseMicroGym):
 
         self.handle_rendering()
 
-        return obs, reward, done, trunc, {}
+        return obs, reward, done, trunc, {"action_mask": self.action_mask()}
 
     def reset(self):
         super().reset()
-        self.ghost_pos = random.choice(self.valid_cells)
+        while self.ghost_pos[0] == self.pos[0] and self.ghost_pos[1] == self.pos[1]:
+            self.ghost_pos = random.choice(self.valid_cells)
         pacman = np.zeros([GRID_SIZE, GRID_SIZE])
         pacman[self.pos[0]][self.pos[1]] = 1
         ghost = np.zeros([GRID_SIZE, GRID_SIZE])
         ghost[self.ghost_pos[0]][self.ghost_pos[1]] = 1
-        return np.stack([self.grid, ghost, pacman]), {}
+        return np.stack([self.grid, ghost, pacman]), {"action_mask": self.action_mask()}
 
     def update_surface(self):
         self.draw_grid_and_pacman()
@@ -314,7 +333,7 @@ class CollectAndRunEnv(BaseMicroGym):
 
         self.handle_rendering()
 
-        return obs, reward, done, trunc, {}
+        return obs, reward, done, trunc, {"action_mask": self.action_mask()}
 
     def reset(self):
         super().reset()
@@ -324,7 +343,9 @@ class CollectAndRunEnv(BaseMicroGym):
         ghost = np.zeros([GRID_SIZE, GRID_SIZE])
         ghost[self.ghost_pos[0]][self.ghost_pos[1]] = 1
         self.pellets = 1.0 - self.grid
-        return np.stack([self.grid, ghost, pacman, self.pellets]), {}
+        return np.stack([self.grid, ghost, pacman, self.pellets]), {
+            "action_mask": self.action_mask()
+        }
 
     def update_surface(self):
         self.draw_grid_and_pacman()

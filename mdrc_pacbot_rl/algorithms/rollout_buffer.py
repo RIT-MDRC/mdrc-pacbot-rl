@@ -63,7 +63,7 @@ class RolloutBuffer:
         rewards: List[float],
         dones: List[bool],
         truncs: List[bool],
-        masks: Optional[List[int]] = None,
+        masks: Optional[torch.Tensor],
     ):
         """
         Inserts a transition from each environment into the buffer. Make sure
@@ -85,10 +85,8 @@ class RolloutBuffer:
             self.truncs[self.next].copy_(
                 torch.tensor(truncs, dtype=torch.float, device=d)
             )
-            if masks:
-                self.masks[self.next].copy_(
-                    torch.tensor(masks, dtype=torch.int, device=d)
-                )
+            if masks is not None:
+                self.masks[self.next].copy_(masks)
 
         self.next += 1
 
