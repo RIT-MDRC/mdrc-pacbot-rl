@@ -22,6 +22,7 @@ def train_ppo(
     lambda_: float,
     epsilon: float,
     gradient_steps: int = 1,
+    gradient_clip: float = 0.5,
 ) -> Tuple[float, float]:
     """
     Performs the PPO training loop.
@@ -81,6 +82,8 @@ def train_ppo(
 
             # We use gradient accumulation to approximate larger batch sizes
             if gradient_step % gradient_steps == 0:
+                nn.utils.clip_grad.clip_grad_value_(v_net.parameters(), gradient_clip)
+                nn.utils.clip_grad.clip_grad_value_(p_net.parameters(), gradient_clip)
                 p_opt.step()
                 v_opt.step()
                 p_opt.zero_grad()
