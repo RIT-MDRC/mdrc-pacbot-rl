@@ -172,7 +172,7 @@ class GetAllPelletsEnv(BaseMicroGym):
 
         return obs, reward, done, trunc, {"action_mask": self.action_mask()}
 
-    def reset(self):
+    def reset(self, **kwargs):
         super().reset()
         self.pellets = 1.0 - self.grid
         pacman = np.zeros([GRID_SIZE, GRID_SIZE])
@@ -252,7 +252,7 @@ class RunAwayEnv(BaseMicroGym):
 
         return obs, reward, done, trunc, {"action_mask": self.action_mask()}
 
-    def reset(self):
+    def reset(self, **kwargs):
         super().reset()
         while self.ghost_pos[0] == self.pos[0] and self.ghost_pos[1] == self.pos[1]:
             self.ghost_pos = random.choice(self.valid_cells)
@@ -335,7 +335,7 @@ class CollectAndRunEnv(BaseMicroGym):
 
         return obs, reward, done, trunc, {"action_mask": self.action_mask()}
 
-    def reset(self):
+    def reset(self, **kwargs):
         super().reset()
         self.ghost_pos = random.choice(self.valid_cells)
         pacman = np.zeros([GRID_SIZE, GRID_SIZE])

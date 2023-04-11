@@ -254,7 +254,7 @@ class NaivePacmanGym(BasePacmanGym):
         if reward == float("Nan"):
             reward = 0
         self.last_score = self.game_state.score
-        
+
         action_mask = self.action_mask()
 
         self.handle_rendering()
@@ -278,8 +278,8 @@ class NaivePacmanGym(BasePacmanGym):
             entities[pos[0]][pos[1]] = -1 if fright and i > 0 else i + 1
         obs = np.stack([grid, entities])
         return obs
-    
-    def reset(self):
+
+    def reset(self, **kwargs):
         obs, info = super().reset()
         info["action_mask"] = self.action_mask()
         return obs, info
@@ -321,7 +321,7 @@ class SemanticChannelPacmanGym(BasePacmanGym):
             self.game_state.blue.pos["current"],
         ]
 
-    def reset(self):
+    def reset(self, **kwargs):
         results = super().reset()
         entity_positions = [
             self.game_state.red.pos["current"],
@@ -438,7 +438,7 @@ class SemanticPacmanGym(BasePacmanGym):
             self.game_state.blue.pos["current"],
         ]
 
-    def reset(self):
+    def reset(self, **kwargs):
         results = super().reset()
         entity_positions = [
             self.game_state.red.pos["current"],
@@ -590,11 +590,9 @@ class SelfAttentionPacmanGym(BasePacmanGym):
         done = not self.game_state.play
 
         # Reward is log normalized difference in game score
-        reward = math.log(1 + self.game_state.score - self.last_score) / math.log(
-            variables.ghost_score
-        )
+        reward = 1 + self.game_state.score - self.last_score
         if self.game_state.lives < variables.starting_lives:
-            reward = -1.0
+            reward = -variables.ghost_score
         if reward == float("Nan"):
             reward = 0
 
@@ -619,13 +617,12 @@ class SelfAttentionPacmanGym(BasePacmanGym):
             ghost[pos[0]][pos[1]] = 1
         fright = self.game_state.is_frightened()
         fright_ghost = np.where(ghost > 0, 1, 0) * int(fright)
-        reward = np.log(
-            1
-            + np.where(grid == 2, 1, 0) * variables.pellet_score
+        reward = (
+            np.where(grid == 2, 1, 0) * variables.pellet_score
             + np.where(grid == 6, 1, 0) * variables.cherry_score
             + np.where(grid == 4, 1, 0) * variables.power_pellet_score
             + fright_ghost * variables.ghost_score
-        ) / math.log(variables.ghost_score)
+        )
 
         # Add entities
         self.entities *= 0.5
@@ -653,9 +650,7 @@ class SelfAttentionPacmanGym(BasePacmanGym):
             np.arange(0, GRID_HEIGHT)[np.newaxis, ...].repeat(GRID_WIDTH, 0)
             - pac_pos[1]
         )
-        dist = (
-            1 - (abs(width_diff) + abs(height_diff)) / (GRID_WIDTH + GRID_HEIGHT)
-        ) ** 2
+        dist = 1 - (abs(width_diff) + abs(height_diff)) / (GRID_WIDTH + GRID_HEIGHT)
 
         obs = np.concatenate(
             [
@@ -668,7 +663,7 @@ class SelfAttentionPacmanGym(BasePacmanGym):
         )
         return obs
 
-    def reset(self):
+    def reset(self, **kwargs):
         grid = np.array(self.game_state.grid)
         self.pacman = np.zeros(grid.shape)
         self.entities = np.zeros([4] + list(grid.shape))

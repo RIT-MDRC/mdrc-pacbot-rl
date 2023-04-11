@@ -18,9 +18,10 @@ from gymnasium.vector.sync_vector_env import SyncVectorEnv
 from torch.distributions import Categorical
 from tqdm import tqdm
 from mdrc_pacbot_rl.algorithms.ppo import train_ppo
+from gymnasium.wrappers.normalize import NormalizeReward
 
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
-from mdrc_pacbot_rl.pacman.gym import NaivePacmanGym as PacmanGym
+from mdrc_pacbot_rl.pacman.gym import SelfAttentionPacmanGym as PacmanGym
 from mdrc_pacbot_rl.utils import get_img_size, init_orthogonal
 
 _: Any
@@ -45,7 +46,7 @@ class BaseNet(nn.Module):
     def __init__(self, obs_shape: torch.Size):
         nn.Module.__init__(self)
         w, h = obs_shape[1:]
-        self.cnn1 = nn.Conv2d(obs_shape[0], 12, 3)
+        self.cnn1 = nn.Conv2d(obs_shape[0], 12, 5)
         h, w = get_img_size(h, w, self.cnn1)
         self.cnn2 = nn.Conv2d(12, 16, 3)
         h, w = get_img_size(h, w, self.cnn2)
@@ -105,12 +106,12 @@ class PolicyNet(nn.Module):
         return self.logits(x)
 
 
-env = SyncVectorEnv([lambda: PacmanGym(random_start=True)] * num_envs)
+env = SyncVectorEnv([lambda: NormalizeReward(PacmanGym(random_start=True))] * num_envs)
 test_env = PacmanGym()
 
 # If evaluating, just run the eval env
 if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
-    test_env = PacmanGym(random_start=True, render_mode="human")
+    test_env = PacmanGym(random_start=False, render_mode="human")
     p_net = torch.load("temp/PNet.pt")
     obs_shape = test_env.observation_space.shape
     if not obs_shape:
@@ -167,7 +168,7 @@ p_opt = torch.optim.Adam(p_net.parameters(), lr=p_lr)
 buffer = RolloutBuffer(
     obs_size,
     torch.Size((1,)),
-    torch.Size((5,)),
+    torch.Size((int(act_space.n),)),
     torch.int,
     num_envs,
     train_steps,

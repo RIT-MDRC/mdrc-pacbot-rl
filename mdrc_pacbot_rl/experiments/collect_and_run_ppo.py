@@ -17,6 +17,7 @@ from gymnasium.vector.sync_vector_env import SyncVectorEnv
 from torch.distributions import Categorical
 from tqdm import tqdm
 from mdrc_pacbot_rl.algorithms.ppo import train_ppo
+from gymnasium.wrappers.normalize import NormalizeReward
 
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.micro_envs import CollectAndRunEnv
@@ -101,7 +102,7 @@ class PolicyNet(nn.Module):
         return x
 
 
-env = SyncVectorEnv([lambda: CollectAndRunEnv() for _ in range(num_envs)])
+env = SyncVectorEnv([lambda: NormalizeReward(CollectAndRunEnv()) for _ in range(num_envs)])
 test_env = CollectAndRunEnv()
 
 # If evaluating, just run the eval env
