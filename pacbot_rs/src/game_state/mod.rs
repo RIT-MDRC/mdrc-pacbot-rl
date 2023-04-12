@@ -61,7 +61,7 @@ pub struct GameState {
     score: u32,
     /// Whether the game is currently playing (not paused/ended).
     #[pyo3(get)]
-    play: bool,
+    pub play: bool,
     pub start_counter: u32,
     state_counter: u32,
     update_ticks: u32,
@@ -114,7 +114,7 @@ impl GameState {
     pub fn is_frightened(&self) -> bool {
         self.state == GameStateState::Frightened
     }
-    
+
     /// Returns the current ghost state (scatter, chase, frightened) as an integer.
     pub fn state(&self) -> u32 {
         self.state as u32

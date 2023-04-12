@@ -39,3 +39,5 @@ pub const NODE_EMBEDDINGS: [[f32; EMBED_DIM]; NUM_NODES] = include_generated!("N
 pub const VALID_ACTIONS: [[bool; 5]; NUM_NODES] = include_generated!("VALID_ACTIONS.rs");
 pub const ACTION_DISTRIBUTIONS: [[[f32; 5]; NUM_NODES]; NUM_NODES] =
     include_generated!("ACTION_DISTRIBUTIONS.rs");
+pub const DISTANCE_MATRIX: [[u8; NUM_NODES]; NUM_NODES] = include_generated!("DISTANCE_MATRIX.rs");
+pub const SUPER_PELLET_LOCS: [(usize,usize);4] = include_generated!("SUPER_PELLET_LOCS.rs");

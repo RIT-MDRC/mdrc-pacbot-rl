@@ -2,7 +2,11 @@ use std::collections::{HashSet, VecDeque};
 
 use pyo3::prelude::*;
 
-use crate::{game_state::GameState, grid, variables::GridValue};
+use crate::{
+    game_state::GameState,
+    grid::{self, coords_to_node, DISTANCE_MATRIX, SUPER_PELLET_LOCS},
+    variables::GridValue,
+};
 
 /// Performs a breadth-first search through the grid. Returns the distance from
 /// the given start position to the closest position for which is_goal(pos) is
@@ -32,7 +36,7 @@ fn breadth_first_search(
     None
 }
 
-const FEAR: usize = 10;
+const FEAR: u8 = 10;
 const PELLET_WEIGHT: f32 = 0.65;
 const SUPER_PELLET_WEIGHT: f32 = 10.0;
 const GHOST_WEIGHT: f32 = 0.35;
@@ -42,16 +46,18 @@ const FRIGHTENED_GHOST_WEIGHT: f32 = 0.3 * GHOST_WEIGHT;
 /// position in the game grid. Returns None if the given position is not walkable.
 #[pyfunction]
 pub fn get_heuristic_value(game_state: &GameState, pos: (usize, usize)) -> Option<f32> {
-    if !grid::is_walkable(pos) {
-        return None;
-    }
+    let pos_node = coords_to_node(pos)?;
 
     let pellet_dist =
         breadth_first_search(pos, |(x, y)| game_state.grid[x][y] == GridValue::o).unwrap_or(0);
     let pellet_heuristic = pellet_dist as f32 * PELLET_WEIGHT;
 
-    let super_pellet_dist =
-        breadth_first_search(pos, |(x, y)| game_state.grid[x][y] == GridValue::O).unwrap_or(0);
+    let super_pellet_dist = SUPER_PELLET_LOCS
+        .iter()
+        .filter(|&&(x, y)| game_state.grid[x][y] == GridValue::O)
+        .map(|&pos| DISTANCE_MATRIX[pos_node][coords_to_node(pos).unwrap()])
+        .min()
+        .unwrap_or(0);
     let super_pellet_heuristic = super_pellet_dist as f32 * SUPER_PELLET_WEIGHT;
 
     // get the distance and frightened status of all (reachable) ghosts
@@ -63,8 +69,8 @@ pub fn get_heuristic_value(game_state: &GameState, pos: (usize, usize)) -> Optio
     ]
     .into_iter()
     .filter_map(|ghost| {
-        breadth_first_search(pos, |pos| pos == ghost.current_pos)
-            .map(|dist| (dist, ghost.is_frightened()))
+        coords_to_node(ghost.current_pos)
+            .map(|node| (DISTANCE_MATRIX[pos_node][node], ghost.is_frightened()))
     })
     .filter(|(dist, _)| *dist < FEAR);
 
