@@ -20,6 +20,7 @@ pub enum GhostColor {
     Blue = 4,
 }
 
+#[derive(Clone)]
 pub struct GhostAgent {
     color: GhostColor,
     init_direction: Direction,
