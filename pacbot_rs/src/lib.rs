@@ -12,8 +12,6 @@ use pyo3::prelude::*;
 
 use game_state::GameState;
 
-extern crate vecmath;
-
 /// A Python module containing Rust implementations of the PacBot environment.
 #[pymodule]
 fn pacbot_rs(_py: Python, m: &PyModule) -> PyResult<()> {

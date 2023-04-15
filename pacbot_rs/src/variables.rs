@@ -48,3 +48,6 @@ pub const PACBOT_STARTING_DIR: Direction = Direction::Left;
 pub const CHERRY_POS: (usize, usize) = (13, 13);
 pub const GAME_FREQUENCY: f32 = 2.0;
 pub const TICKS_PER_UPDATE: u32 = 12;
+
+pub const INNER_CELL_WIDTH: f64 = 1.5;
+pub const ROBOT_WIDTH: f64 = 0.75;
