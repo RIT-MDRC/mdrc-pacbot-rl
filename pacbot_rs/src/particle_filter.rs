@@ -264,7 +264,7 @@ impl ParticleFilter {
 
         let pos = self.empty_grid_cells[index].clone();
 
-        let extra_space_per_side = (ROBOT_WIDTH - INNER_CELL_WIDTH) / 2.0;
+        let extra_space_per_side = (INNER_CELL_WIDTH - ROBOT_WIDTH) / 2.0;
 
         let x_range = Uniform::new(-extra_space_per_side, extra_space_per_side);
         let y_range = Uniform::new(-extra_space_per_side, extra_space_per_side);
