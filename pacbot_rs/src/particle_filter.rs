@@ -1,8 +1,11 @@
 use rand::distributions::Uniform;
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
-use crate::grid::{GRID, is_walkable};
+use crate::grid::{GRID, NODE_COORDS, NUM_NODES};
 use crate::variables::{INNER_CELL_WIDTH, ROBOT_WIDTH};
+use pyo3::prelude::*;
+
+use ordered_float::NotNan;
 
 const PARTICLE_FILTER_POINTS: usize = 1000;
 const EPSILON: f64 = 0.0000001;
@@ -80,44 +83,126 @@ struct PfPose {
     angle: f64, // radians
 }
 
+#[pyclass]
 pub struct ParticleFilter {
     pacbot_pose: PfPose,
     points: [PfPose; PARTICLE_FILTER_POINTS],
-    empty_grid_cells: Vec<PfPosition>,
+    empty_grid_cells: [PfPosition; NUM_NODES],
     map_segments: (Vec<HorizontalSegment>, Vec<VerticalSegment>),
 }
 
+#[pymethods]
 impl ParticleFilter {
-    fn update_cell_sort(&mut self) {
-        self.empty_grid_cells.sort_by(|a, b| a.dist(self.pacbot_pose.pos)
-            .total_cmp(&b.dist(self.pacbot_pose.pos)));
-    }
-
-    fn random_point(&self) -> PfPose {
-        let mut rng = rand::thread_rng();
-        let normal = Normal::new(0.0, 10.0).unwrap();
-        let random_value = rng.sample::<f64, _>(normal).abs();
-        let index = random_value.round() as usize;
-
-        let pos = self.empty_grid_cells[index].clone();
-
-        let extra_space_per_side = (ROBOT_WIDTH - INNER_CELL_WIDTH) / 2.0;
-
-        let x_range = Uniform::new(-extra_space_per_side, extra_space_per_side);
-        let y_range = Uniform::new(-extra_space_per_side, extra_space_per_side);
-
-        let random_x = x_range.sample(&mut rng);
-        let random_y = y_range.sample(&mut rng);
-
-        let pos = PfPosition {
-            x: pos.x + random_x,
-            y: pos.y + random_y,
+    #[new]
+    pub fn new(pacbot_pos: (usize, usize, f64)) -> Self {
+        let empty_pose = PfPose {
+            pos: PfPosition { x: 0.0, y: 0.0 },
+            angle: 0.0,
         };
 
-        let angle_range = Uniform::new(0.0, 2.0 * std::f64::consts::PI);
-        let angle = angle_range.sample(&mut rng);
+        let empty_grid_cells = NODE_COORDS.map(|(x, y)| PfPosition {
+            x: x as f64,
+            y: y as f64
+        });
 
-        PfPose { pos, angle }
+        let points = [empty_pose; PARTICLE_FILTER_POINTS];
+
+        let mut pf = Self {
+            pacbot_pose: PfPose {
+                pos: PfPosition {
+                    x: pacbot_pos.0 as f64,
+                    y: pacbot_pos.1 as f64,
+                },
+                angle: pacbot_pos.2,
+            },
+            points,
+            empty_grid_cells,
+            map_segments: Self::get_map_segments(),
+        };
+
+        pf.update_cell_sort();
+
+        // set points to random positions
+        for i in 0..PARTICLE_FILTER_POINTS {
+            pf.points[i] = pf.random_point();
+        }
+
+        pf
+    }
+
+    pub fn update(&mut self, magnitude: f64, direction: f64, sensors: [f64; 5]) -> ((f64, f64), f64) {
+        for point in self.points.iter_mut() {
+            point.pos.update_by(magnitude, direction);
+            point.angle += direction;
+        }
+
+        // sort points by accuracy based on sensors
+        let mut point_accuracies: Vec<(&PfPose, f64)> = self.points
+            .iter()
+            .map(|point| (point, self.get_point_error(point, sensors)))
+            .collect();
+
+        point_accuracies.sort_unstable_by_key(|(_, accuracy)| NotNan::new(*accuracy).unwrap());
+
+        let sorted_points: Vec<PfPose> = point_accuracies.into_iter().map(|(point, _)| *point).collect();
+        self.points.copy_from_slice(&sorted_points);
+
+        // find the best guess position
+        self.pacbot_pose = self.points[0];
+        self.update_cell_sort();
+
+        // replace the worst half of the points with random points around the best points
+        for i in PARTICLE_FILTER_POINTS / 2..PARTICLE_FILTER_POINTS {
+            // choose a random index from 0 to PARTICLE_FILTER_POINTS, weighing lower values more
+            let index_range = Uniform::new(0.0, 1.0);
+            let mut index_f: f64 = 1.0 - (index_range.sample(&mut rand::thread_rng()) as f64).sqrt();
+            index_f *= PARTICLE_FILTER_POINTS as f64 / 2.0;
+            let mut index = index_f as usize;
+            if index >= PARTICLE_FILTER_POINTS {
+                index = PARTICLE_FILTER_POINTS - 1;
+            }
+
+            let old_point = self.points[index];
+            // choose a random small angle and distance from the old point
+            let angle_range = Uniform::new(-0.1, 0.1);
+            let x_range = Uniform::new(-0.1, 0.1);
+            let y_range = Uniform::new(-0.1, 0.1);
+
+            let angle = old_point.angle + angle_range.sample(&mut rand::thread_rng());
+            let x = old_point.pos.x + x_range.sample(&mut rand::thread_rng());
+            let y = old_point.pos.y + y_range.sample(&mut rand::thread_rng());
+
+            self.points[i] = PfPose {
+                pos: PfPosition { x, y },
+                angle,
+            };
+        }
+
+        // replace some of the new points with completely random points
+        for i in (PARTICLE_FILTER_POINTS * 9) / 10..PARTICLE_FILTER_POINTS {
+            self.points[i] = self.random_point();
+        }
+
+        // return the best guess position
+        ((self.pacbot_pose.pos.x, self.pacbot_pose.pos.y), self.pacbot_pose.angle)
+    }
+}
+
+impl ParticleFilter {
+    fn get_point_error(&self, point: &PfPose, sensors: [f64; 5]) -> f64 {
+        let mut error = 0.0;
+
+        for i in 0..5 {
+            let angle = point.angle + SENSOR_ANGLES[i];
+            let distance = self.raycast(point.pos, angle) - SENSOR_DISTANCE_FROM_CENTER;
+            let sensor_distance = sensors[i];
+
+            let diff = (distance - sensor_distance).abs();
+
+            error += diff;
+        }
+
+        error
     }
 
     fn get_map_segments() -> (Vec<HorizontalSegment>, Vec<VerticalSegment>) {
@@ -167,6 +252,37 @@ impl ParticleFilter {
         (horizontal_segments, vertical_segments)
     }
 
+    fn update_cell_sort(&mut self) {
+        self.empty_grid_cells.sort_by_key(|a| NotNan::new(a.dist(self.pacbot_pose.pos)).unwrap());
+    }
+
+    fn random_point(&self) -> PfPose {
+        let mut rng = rand::thread_rng();
+        let normal = Normal::new(0.0, 10.0).unwrap();
+        let random_value = rng.sample::<f64, _>(normal).abs();
+        let index = random_value.round() as usize;
+
+        let pos = self.empty_grid_cells[index].clone();
+
+        let extra_space_per_side = (ROBOT_WIDTH - INNER_CELL_WIDTH) / 2.0;
+
+        let x_range = Uniform::new(-extra_space_per_side, extra_space_per_side);
+        let y_range = Uniform::new(-extra_space_per_side, extra_space_per_side);
+
+        let random_x = x_range.sample(&mut rng);
+        let random_y = y_range.sample(&mut rng);
+
+        let pos = PfPosition {
+            x: pos.x + random_x,
+            y: pos.y + random_y,
+        };
+
+        let angle_range = Uniform::new(0.0, 2.0 * std::f64::consts::PI);
+        let angle = angle_range.sample(&mut rng);
+
+        PfPose { pos, angle }
+    }
+
     fn raycast(&self, start_pos: PfPosition, angle: f64) -> f64 {
         let (horizontal_segments, vertical_segments) = &self.map_segments;
 
@@ -188,112 +304,5 @@ impl ParticleFilter {
         }
 
         min_distance
-    }
-
-    pub fn new(pacbot_pos: (usize, usize, f64)) -> Self {
-        let empty_pose = PfPose {
-            pos: PfPosition { x: 0.0, y: 0.0 },
-            angle: 0.0,
-        };
-
-        let empty_grid_cells = (0..28)
-            .flat_map(|x| (0..31).map(move |y| (x, y)))
-            .filter(|&pair| is_walkable(pair))
-            .map(|pair| PfPosition { x: pair.0 as f64, y: pair.1 as f64 })
-            .collect();
-
-        let points = [empty_pose; PARTICLE_FILTER_POINTS];
-
-        let mut pf = Self {
-            pacbot_pose: PfPose {
-                pos: PfPosition {
-                    x: pacbot_pos.0 as f64,
-                    y: pacbot_pos.1 as f64,
-                },
-                angle: pacbot_pos.2,
-            },
-            points,
-            empty_grid_cells,
-            map_segments: Self::get_map_segments(),
-        };
-
-        pf.update_cell_sort();
-
-        // set points to random positions
-        for i in 0..PARTICLE_FILTER_POINTS {
-            pf.points[i] = pf.random_point();
-        }
-
-        pf
-    }
-
-    fn get_point_accuracy(&self, point: &PfPose, sensors: [f64; 5]) -> f64 {
-        let mut accuracy = 0.0;
-
-        for i in 0..5 {
-            let angle = point.angle + SENSOR_ANGLES[i];
-            let distance = self.raycast(point.pos, angle);
-            let sensor_distance = sensors[i];
-
-            let diff = (distance - sensor_distance).abs();
-
-            accuracy += diff;
-        }
-
-        accuracy
-    }
-
-    pub fn update(&mut self, magnitude: f64, direction: f64, sensors: [f64; 5]) {
-        for point in self.points.iter_mut() {
-            point.pos.update_by(magnitude, direction);
-            point.angle += direction;
-        }
-
-        // sort points by accuracy based on sensors
-        let mut point_accuracies: Vec<(&PfPose, f64)> = self.points
-            .iter()
-            .map(|point| (point, self.get_point_accuracy(point, sensors)))
-            .collect();
-
-        point_accuracies.sort_by(|(_, a_accuracy), (_, b_accuracy)| {
-            a_accuracy.partial_cmp(b_accuracy).unwrap()
-        });
-
-        let sorted_points: Vec<PfPose> = point_accuracies.into_iter().map(|(point, _)| *point).collect();
-        self.points.copy_from_slice(&sorted_points);
-
-        // find the best guess position
-        self.pacbot_pose = self.points[0];
-        self.update_cell_sort();
-
-        // replace the worst half of the points with random points around the best points
-        for i in 0..PARTICLE_FILTER_POINTS / 2 {
-            // choose a random index from 0 to PARTICLE_FILTER_POINTS, weighing lower values more
-            let index_range = Uniform::new(0.0, ((PARTICLE_FILTER_POINTS / 2) as f64).sqrt());
-            let mut index = index_range.sample(&mut rand::thread_rng()).powf(2.0) as usize;
-            if index >= PARTICLE_FILTER_POINTS {
-                index = PARTICLE_FILTER_POINTS - 1;
-            }
-
-            let old_point = self.points[index];
-            // choose a random small angle and distance from the old point
-            let angle_range = Uniform::new(-0.1, 0.1);
-            let distance_range = Uniform::new(-0.1, 0.1);
-            let angle: f64 = angle_range.sample(&mut rand::thread_rng());
-            let distance: f64 = distance_range.sample(&mut rand::thread_rng());
-
-            self.points[i + PARTICLE_FILTER_POINTS / 2] = PfPose {
-                pos: PfPosition {
-                    x: old_point.pos.x + angle.cos() * distance,
-                    y: old_point.pos.y + angle.sin() * distance,
-                },
-                angle: old_point.angle + angle,
-            };
-        }
-
-        // replace some of the new points with completely random points
-        for i in 0..PARTICLE_FILTER_POINTS / 10 {
-            self.points[i] = self.random_point();
-        }
     }
 }

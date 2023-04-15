@@ -11,11 +11,13 @@ pub mod particle_filter;
 use pyo3::prelude::*;
 
 use game_state::GameState;
+use particle_filter::ParticleFilter;
 
 /// A Python module containing Rust implementations of the PacBot environment.
 #[pymodule]
 fn pacbot_rs(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<GameState>()?;
+    m.add_class::<ParticleFilter>()?;
     m.add_function(wrap_pyfunction!(observations::create_obs_semantic, m)?)?;
     m.add_function(wrap_pyfunction!(heuristic_values::get_heuristic_value, m)?)?;
     m.add_function(wrap_pyfunction!(
