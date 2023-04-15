@@ -99,6 +99,7 @@ impl SearchTreeNode {
         Action::try_from_primitive(action_index.try_into().unwrap()).unwrap()
     }
 
+    /// Returns the maximum node depth in this subtree.
     fn max_depth(&self) -> usize {
         self.children
             .iter()
@@ -106,6 +107,16 @@ impl SearchTreeNode {
             .map(|child| 1 + child.max_depth())
             .max()
             .unwrap_or(0)
+    }
+
+    /// Returns the total number of nodes in this subtree, including this node.
+    fn node_count(&self) -> usize {
+        1 + self
+            .children
+            .iter()
+            .filter_map(|edge| edge.child.as_ref())
+            .map(|child| child.node_count())
+            .sum::<usize>()
     }
 }
 
@@ -143,6 +154,16 @@ impl MCTSContext {
             self.sample_move(env.clone(), |_env| 0.0);
         }
         self.best_action(env)
+    }
+
+    /// Returns the maximum node depth in the search tree.
+    pub fn max_depth(&self) -> usize {
+        self.root.max_depth()
+    }
+
+    /// Returns the total number of nodes in the search tree.
+    pub fn node_count(&self) -> usize {
+        self.root.node_count()
     }
 }
 
