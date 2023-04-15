@@ -1,6 +1,8 @@
 //! Build script that precomputes various things from the game grid.
 
+use std::collections::HashMap;
 use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::env;
 use std::fmt::Debug;
 use std::fs;
@@ -9,7 +11,7 @@ use std::io::BufWriter;
 use std::io::Write;
 use std::path::Path;
 
-#[derive(PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[allow(non_camel_case_types)]
 pub enum GridValue {
     /// Wall
@@ -72,6 +74,43 @@ fn output_array<T: npyz::Deserialize + Debug, P: AsRef<Path>>(
     out_file.flush()
 }
 
+/// Performs a breadth-first search through the grid. For each node visited, calls
+/// the given callback with the position and distance.
+fn breadth_first_search(start: (usize, usize), mut callback: impl FnMut((usize, usize), usize)) {
+    callback(start, 0);
+
+    fn is_walkable(pos: (usize, usize)) -> bool {
+        let tile = GRID[pos.0][pos.1];
+        tile != GridValue::I && tile != GridValue::n
+    }
+
+    let mut queue = VecDeque::from([(start, 0)]);
+    let mut visited = HashSet::from([start]);
+    while let Some((cur_pos, cur_dist)) = queue.pop_front() {
+        let neighbor_dist = cur_dist + 1;
+        let (cx, cy) = cur_pos;
+        for neighbor in [(cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)] {
+            if is_walkable(neighbor) && visited.insert(neighbor) {
+                callback(neighbor, neighbor_dist);
+                queue.push_back((neighbor, neighbor_dist));
+            }
+        }
+    }
+}
+
+fn compute_distance_matrix(node_coords: &[(usize, usize)]) -> Vec<Vec<usize>> {
+    let coords_to_node: HashMap<(usize, usize), usize> = node_coords
+        .iter()
+        .enumerate()
+        .map(|(i, &pos)| (pos, i))
+        .collect();
+    let mut dists = vec![vec![0; node_coords.len()]; node_coords.len()];
+    for (i, &start) in node_coords.iter().enumerate() {
+        breadth_first_search(start, |pos, dist| dists[i][coords_to_node[&pos]] = dist);
+    }
+    dists
+}
+
 fn main() -> io::Result<()> {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let out_dir = Path::new(&out_dir);
@@ -124,6 +163,23 @@ fn main() -> io::Result<()> {
     output_array::<f32, _>(
         "../computed_data/action_distributions.npy",
         out_dir.join("ACTION_DISTRIBUTIONS.rs"),
+    )?;
+
+    // distance matrix
+    let distance_matrix = compute_distance_matrix(&node_coords);
+    fs::write(
+        out_dir.join("DISTANCE_MATRIX.rs"),
+        format!("{distance_matrix:?}"),
+    )?;
+
+    // super pellet locations
+    let super_pellet_locs = node_coords
+        .iter()
+        .filter(|(x, y)| GRID[*x][*y] == GridValue::O)
+        .collect::<Vec<_>>();
+    fs::write(
+        out_dir.join("SUPER_PELLET_LOCS.rs"),
+        format!("{super_pellet_locs:?}"),
     )?;
 
     Ok(())
