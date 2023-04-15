@@ -3,6 +3,7 @@ pub mod ghost_agent;
 pub mod ghost_paths;
 pub mod grid;
 pub mod heuristic_values;
+pub mod mcts;
 pub mod observations;
 pub mod pacbot;
 pub mod variables;
@@ -10,7 +11,9 @@ pub mod particle_filter;
 
 use pyo3::prelude::*;
 
-use game_state::GameState;
+use mcts::MCTSContext;
+
+use game_state::{env::PacmanGym, GameState};
 use particle_filter::ParticleFilter;
 
 /// A Python module containing Rust implementations of the PacBot environment.
@@ -18,6 +21,8 @@ use particle_filter::ParticleFilter;
 fn pacbot_rs(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<GameState>()?;
     m.add_class::<ParticleFilter>()?;
+    m.add_class::<PacmanGym>()?;
+    m.add_class::<MCTSContext>()?;
     m.add_function(wrap_pyfunction!(observations::create_obs_semantic, m)?)?;
     m.add_function(wrap_pyfunction!(heuristic_values::get_heuristic_value, m)?)?;
     m.add_function(wrap_pyfunction!(

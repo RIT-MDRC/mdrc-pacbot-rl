@@ -1,6 +1,7 @@
+pub mod env;
 mod py_wrappers;
 
-use std::cell::RefCell;
+use std::cell::{self, RefCell};
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use pyo3::prelude::*;
@@ -28,6 +29,7 @@ pub enum GameStateState {
     Frightened = 3,
 }
 
+#[derive(Clone)]
 #[pyclass]
 pub struct GameState {
     pub pacbot: PacBot,
@@ -58,7 +60,7 @@ pub struct GameState {
     frightened_multiplier: u32,
     /// The current score.
     #[pyo3(get)]
-    score: u32,
+    pub score: u32,
     /// Whether the game is currently playing (not paused/ended).
     #[pyo3(get)]
     pub play: bool,
@@ -188,9 +190,8 @@ impl GameState {
     }
 
     pub fn print_ghost_pos(&self) {
-        let ghosts = [&self.red, &self.pink, &self.blue, &self.orange];
-        let ghost_strings = ghosts.map(|g| format!("{:?}", g.borrow().current_pos));
-        println!("{}", ghost_strings.join(" "));
+        let ghost_strings = self.ghosts().map(|g| format!("{:?}", g.current_pos));
+        println!("{}", ghost_strings.collect::<Vec<_>>().join(" "));
     }
 
     pub fn next_step(&mut self) {
@@ -259,6 +260,18 @@ impl GameState {
 
 // separate impl block for private functions not exposed to Python
 impl GameState {
+    pub fn ghosts(&self) -> impl Iterator<Item = cell::Ref<GhostAgent>> {
+        [&self.red, &self.pink, &self.orange, &self.blue]
+            .into_iter()
+            .map(|g| g.borrow())
+    }
+
+    pub fn ghosts_mut(&mut self) -> impl Iterator<Item = cell::RefMut<GhostAgent>> {
+        [&self.red, &self.pink, &self.orange, &self.blue]
+            .into_iter()
+            .map(|g| g.borrow_mut())
+    }
+
     /// Frightens all of the ghosts and saves the old state to be restored when frightened mode ends.
     fn become_frightened(&mut self) {
         if self.state != GameStateState::Frightened {
@@ -266,10 +279,7 @@ impl GameState {
         }
         self.state = GameStateState::Frightened;
         self.frightened_counter = FRIGHTENED_LENGTH;
-        self.red.borrow_mut().become_frightened();
-        self.pink.borrow_mut().become_frightened();
-        self.orange.borrow_mut().become_frightened();
-        self.blue.borrow_mut().become_frightened();
+        self.ghosts_mut().for_each(|mut g| g.become_frightened());
         self.just_swapped_state = true;
     }
 
@@ -369,10 +379,7 @@ impl GameState {
     /// Updates each agent's position and behavior to reflect the beginning of a new round.
     fn respawn_agents(&mut self) {
         self.pacbot.respawn();
-        self.red.borrow_mut().respawn();
-        self.pink.borrow_mut().respawn();
-        self.orange.borrow_mut().respawn();
-        self.blue.borrow_mut().respawn();
+        self.ghosts_mut().for_each(|mut g| g.respawn());
     }
 
     fn end_game(&mut self) {
@@ -402,12 +409,8 @@ impl GameState {
 
     /// Returns true if Pacman has collided with a ghost and the ghost is not frightened.
     fn should_die(&self) -> bool {
-        [&self.red, &self.pink, &self.orange, &self.blue]
-            .into_iter()
-            .any(|ghost| {
-                let ghost = ghost.borrow();
-                ghost.current_pos == self.pacbot.pos && ghost.frightened_counter == 0
-            })
+        self.ghosts()
+            .any(|ghost| ghost.current_pos == self.pacbot.pos && ghost.frightened_counter == 0)
     }
 
     /// Checks for ghosts that have been eaten and sends them back

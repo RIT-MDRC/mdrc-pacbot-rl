@@ -1,5 +1,6 @@
 use std::collections::{HashSet, VecDeque};
 
+use ordered_float::NotNan;
 use pyo3::prelude::*;
 
 use crate::{
@@ -91,15 +92,27 @@ pub fn get_heuristic_value(game_state: &GameState, pos: (usize, usize)) -> Optio
 }
 
 /// Computes the heuristic values for each of the 5 actions for the given GameState.
+/// Returns the values as well as the best action.
 #[pyfunction]
-pub fn get_action_heuristic_values(game_state: &GameState) -> [Option<f32>; 5] {
+pub fn get_action_heuristic_values(game_state: &GameState) -> ([Option<f32>; 5], u8) {
     let (px, py) = game_state.pacbot.pos;
-    [
+
+    let values = [
         (px, py),
         (px, py + 1),
         (px, py - 1),
         (px - 1, py),
         (px + 1, py),
     ]
-    .map(|pos| get_heuristic_value(game_state, pos))
+    .map(|pos| get_heuristic_value(game_state, pos));
+
+    let best_action = values
+        .iter()
+        .enumerate()
+        .filter_map(|(i, value)| value.map(|v| (i, v)))
+        .min_by_key(|&(_, value)| NotNan::new(value).unwrap())
+        .expect("at least one action should be valid")
+        .0;
+
+    (values, best_action.try_into().unwrap())
 }

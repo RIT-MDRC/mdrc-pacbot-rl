@@ -1,5 +1,6 @@
 use crate::variables::{Direction, PACBOT_STARTING_DIR, PACBOT_STARTING_POS};
 
+#[derive(Clone)]
 pub struct PacBot {
     pub pos: (usize, usize),
     pub direction: Direction,
