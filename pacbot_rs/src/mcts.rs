@@ -148,8 +148,10 @@ impl MCTSContext {
         self.root.best_action(env)
     }
 
-    /// Performs the specified number of MCTS iterations, then returns the best action.
-    pub fn ponder_and_choose(&mut self, env: &PacmanGym, num_iterations: usize) -> Action {
+    /// Performs MCTS iterations to grow the tree to (approximately) the given size,
+    /// then returns the best action.
+    pub fn ponder_and_choose(&mut self, env: &PacmanGym, max_tree_size: usize) -> Action {
+        let num_iterations = max_tree_size.saturating_sub(self.node_count());
         for _ in 0..num_iterations {
             self.sample_move(env.clone(), |_env| 0.0);
         }
