@@ -16,6 +16,7 @@ use static_assertions::assert_eq_size;
 use super::GameState;
 use crate::{
     ghost_agent::GhostAgent,
+    pacbot::PacBot,
     variables::{Direction, GridValue},
 };
 
@@ -231,23 +232,37 @@ struct PacBotWrapper {
     game_state: Py<GameState>,
 }
 
+impl PacBotWrapper {
+    fn with_pacbot<T, F: FnOnce(&mut PacBot) -> T>(&self, py: Python<'_>, f: F) -> T {
+        let mut game_state = self.game_state.borrow_mut(py);
+        f(&mut game_state.pacbot)
+    }
+}
+
 #[pymethods]
 impl PacBotWrapper {
     #[getter]
     fn pos(&self, py: Python<'_>) -> (usize, usize) {
-        let game_state = self.game_state.borrow(py);
-        game_state.pacbot.pos
+        self.with_pacbot(py, |pacbot| pacbot.pos)
+    }
+
+    #[setter]
+    fn set_pos(&self, py: Python<'_>, value: (usize, usize)) {
+        self.with_pacbot(py, |pacbot| pacbot.pos = value);
     }
 
     #[getter]
-    fn direction(&self, py: Python<'_>) -> u8 {
-        let game_state = self.game_state.borrow(py);
-        game_state.pacbot.direction.into()
+    fn direction(&self, py: Python<'_>) -> Direction {
+        self.with_pacbot(py, |pacbot| pacbot.direction)
+    }
+
+    #[setter]
+    fn set_direction(&self, py: Python<'_>, value: Direction) {
+        self.with_pacbot(py, |pacbot| pacbot.direction = value);
     }
 
     fn update(&self, py: Python<'_>, position: (usize, usize)) {
-        let mut game_state = self.game_state.borrow_mut(py);
-        game_state.pacbot.update(position);
+        self.with_pacbot(py, |pacbot| pacbot.update(position));
     }
 }
 
