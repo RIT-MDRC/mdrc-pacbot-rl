@@ -80,9 +80,10 @@ import envpool  # type: ignore
 import torch
 import torch.nn as nn
 import wandb
-from gym.envs.classic_control.cartpole import CartPoleEnv
+from gym.envs.box2d.lunar_lander import LunarLander
 from torch.distributions import Categorical
 from tqdm import tqdm
+from mdrc_pacbot_rl.algorithms.ppo import train_ppo
 
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.utils import copy_params, init_orthogonal
@@ -90,8 +91,8 @@ from mdrc_pacbot_rl.utils import copy_params, init_orthogonal
 _: Any
 
 # Hyperparameters
-num_envs = 128
-train_steps = 500
+num_envs = 256
+train_steps = 250
 iterations = 300
 train_iters = 2
 train_batch_size = 512
@@ -101,7 +102,7 @@ epsilon = 0.2
 max_eval_steps = 500
 v_lr = 0.01
 p_lr = 0.001
-device = torch.device("cpu")
+device = torch.device("cuda")
 
 wandb.init(
     project="tests",
@@ -156,7 +157,7 @@ class PolicyNet(nn.Module):
         self.logits = nn.LogSoftmax(1)
         init_orthogonal(self)
 
-    def forward(self, input: torch.Tensor):
+    def forward(self, input: torch.Tensor, masks=None):
         x = self.a_layer1(input.flatten(1))
         x = self.relu(x)
         x = self.a_layer2(x)
@@ -166,16 +167,14 @@ class PolicyNet(nn.Module):
         return x
 
 
-env = envpool.make("CartPole-v1", "gym", num_envs=num_envs)
-test_env = CartPoleEnv()
+env = envpool.make("LunarLander-v2", "gym", num_envs=num_envs)
+test_env = LunarLander(render_mode="human")
 
 # Initialize policy and value networks
 obs_space = env.observation_space
 act_space = env.action_space
 v_net = ValueNet(obs_space.shape)
 p_net = PolicyNet(obs_space.shape, act_space.n)
-p_net_old = PolicyNet(obs_space.shape, act_space.n)
-p_net_old.eval()
 v_opt = torch.optim.Adam(v_net.parameters(), lr=v_lr)
 p_opt = torch.optim.Adam(p_net.parameters(), lr=p_lr)
 
@@ -183,7 +182,7 @@ p_opt = torch.optim.Adam(p_net.parameters(), lr=p_lr)
 buffer = RolloutBuffer(
     obs_space.shape,
     torch.Size((1,)),
-    torch.Size((4,)),
+    torch.Size((int(act_space.n),)),
     torch.int,
     num_envs,
     train_steps,
@@ -192,7 +191,7 @@ buffer = RolloutBuffer(
 
 obs = torch.Tensor(env.reset()[0])
 done = False
-for _ in tqdm(range(iterations), position=0):
+for step in tqdm(range(iterations), position=0):
     # Collect experience for a number of steps and store it in the buffer
     with torch.no_grad():
         for _ in tqdm(range(train_steps), position=1):
@@ -215,10 +214,24 @@ for _ in tqdm(range(iterations), position=0):
         buffer.insert_final_step(obs)
 
     # Train
+    total_p_loss, total_v_loss = train_ppo(
+        p_net,
+        v_net,
+        p_opt,
+        v_opt,
+        buffer,
+        device,
+        train_iters,
+        train_batch_size,
+        discount,
+        lambda_,
+        epsilon,
+        gradient_steps=1,
+    )
+
+    """
     p_net.train()
     v_net.train()
-    copy_params(p_net, p_net_old)
-
     total_v_loss = 0.0
     total_p_loss = 0.0
     for _ in range(train_iters):
@@ -228,13 +241,9 @@ for _ in tqdm(range(iterations), position=0):
             # Train policy network.
             #
             # First, we get the log probabilities of taking the actions we took
-            # when we took them. You can store this in the replay buffer right
-            # after taking the action and reuse it, but here I'm just using a
-            # copy of the original policy network and passing the observation to
-            # get the same thing.
+            # when we took them.
             with torch.no_grad():
-                old_log_probs = p_net_old(prev_states)
-                old_act_probs = Categorical(logits=old_log_probs).log_prob(
+                old_act_probs = Categorical(logits=action_probs).log_prob(
                     actions.squeeze()
                 )
             # Next, we get the log probabilities of taking the actions with our
@@ -283,6 +292,7 @@ for _ in tqdm(range(iterations), position=0):
 
     p_net.eval()
     v_net.eval()
+    """
     buffer.clear()
 
     # Evaluate the network's performance after this training iteration. The
@@ -293,25 +303,28 @@ for _ in tqdm(range(iterations), position=0):
     # decrease.
     #
     # No, you don't need to understand the code here.
-    obs = torch.Tensor(test_env.reset()[0])
+    test_env.render_mode = None
+    if step % 10 == 0:
+        test_env.render_mode = "human"
+    eval_obs = torch.Tensor(test_env.reset()[0])
     done = False
     with torch.no_grad():
         # Visualize
         reward_total = 0
         entropy_total = 0.0
-        obs = torch.Tensor(test_env.reset()[0])
+        eval_obs = torch.Tensor(test_env.reset()[0])
         eval_steps = 8
         for _ in range(eval_steps):
             avg_entropy = 0.0
             steps_taken = 0
             for _ in range(max_eval_steps):
-                distr = Categorical(logits=p_net(obs.unsqueeze(0)).squeeze())
+                distr = Categorical(logits=p_net(eval_obs.unsqueeze(0)).squeeze())
                 action = distr.sample().item()
                 obs_, reward, done, _, _ = test_env.step(action)
-                obs = torch.Tensor(obs_)
+                eval_obs = torch.Tensor(obs_)
                 steps_taken += 1
                 if done:
-                    obs = torch.Tensor(test_env.reset()[0])
+                    eval_obs = torch.Tensor(test_env.reset()[0])
                     break
                 reward_total += reward
                 avg_entropy += distr.entropy()
@@ -326,9 +339,6 @@ for _ in tqdm(range(iterations), position=0):
             "avg_p_loss": total_p_loss / train_iters,
         }
     )
-
-    obs = torch.Tensor(env.reset()[0])
-    done = False
 
 # Congrats! You now know how to write the same exact algorithm OpenAI uses in
 # their own work! Next stop: https://openai.com/careers

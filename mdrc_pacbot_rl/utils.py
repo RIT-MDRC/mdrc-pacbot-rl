@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Union
 
 import torch
 from torch import nn
@@ -22,6 +22,29 @@ def get_img_size(old_h: int, old_w: int, conv: torch.nn.Conv2d) -> Tuple[int, in
     ) // conv.stride[1] + 1
     return new_h, new_w
 
+def get_img_size_3d(old_d: int, old_h: int, old_w: int, conv: torch.nn.Conv3d) -> Tuple[int, int, int]:
+    """
+    Returns the size of the image after the convolution is run on it.
+    """
+    new_d = (
+        old_d
+        + 2 * int(conv.padding[0])
+        - conv.dilation[0] * (conv.kernel_size[0] - 1)
+        - 1
+    ) // conv.stride[0] + 1
+    new_h = (
+        old_h
+        + 2 * int(conv.padding[1])
+        - conv.dilation[1] * (conv.kernel_size[1] - 1)
+        - 1
+    ) // conv.stride[1] + 1
+    new_w = (
+        old_w
+        + 2 * int(conv.padding[2])
+        - conv.dilation[2] * (conv.kernel_size[2] - 1)
+        - 1
+    ) // conv.stride[2] + 1
+    return new_d, new_h, new_w
 
 def copy_params(src: nn.Module, dest: nn.Module):
     """

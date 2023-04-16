@@ -21,24 +21,24 @@ from mdrc_pacbot_rl.algorithms.ppo import train_ppo
 from gymnasium.wrappers.normalize import NormalizeReward
 
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
-from mdrc_pacbot_rl.pacman.gym import SelfAttentionPacmanGym as PacmanGym
+from mdrc_pacbot_rl.pacman.gym import SemanticChannelPacmanGym as PacmanGym
 from mdrc_pacbot_rl.utils import get_img_size, init_orthogonal
 
 _: Any
 
 # Hyperparameters
-num_envs = 128  # Number of environments to step through at once during sampling.
-train_steps = 32  # Number of steps to step through during sampling. Total # of samples is train_steps * num_envs/
+num_envs = 32  # Number of environments to step through at once during sampling.
+train_steps = 128  # Number of steps to step through during sampling. Total # of samples is train_steps * num_envs/
 iterations = 20000  # Number of sample/train iterations.
-train_iters = 1  # Number of passes over the samples collected.
-train_batch_size = 4096  # Minibatch size while training models.
+train_iters = 4  # Number of passes over the samples collected.
+train_batch_size = 2048  # Minibatch size while training models.
 discount = 0.5  # Discount factor applied to rewards.
-lambda_ = 0.7  # Lambda for GAE.
+lambda_ = 0.9  # Lambda for GAE.
 epsilon = 0.2  # Epsilon for importance sample clipping.
 eval_steps = 8  # Number of eval runs to average over.
 max_eval_steps = 300  # Max number of steps to take during each eval run.
-v_lr = 0.0001  # Learning rate of the value net.
-p_lr = 0.00001  # Learning rate of the policy net.
+v_lr = 0.0001  # Min learning rate of the value net.
+p_lr = 0.00001  # Min learning rate of the policy net.
 device = torch.device("cuda")
 
 
@@ -46,18 +46,22 @@ class BaseNet(nn.Module):
     def __init__(self, obs_shape: torch.Size):
         nn.Module.__init__(self)
         w, h = obs_shape[1:]
-        self.cnn1 = nn.Conv2d(obs_shape[0], 12, 5)
+        self.cnn1 = nn.Conv2d(obs_shape[0], 32, 5, padding=1)
         h, w = get_img_size(h, w, self.cnn1)
-        self.cnn2 = nn.Conv2d(12, 16, 3)
+        self.cnn2 = nn.Conv2d(32, 48, 3)
         h, w = get_img_size(h, w, self.cnn2)
-        self.flat_dim = h * w * self.cnn2.out_channels
-        self.relu = nn.ReLU()
+        self.cnn3 = nn.Conv2d(48, 64, 3)
+        h, w = get_img_size(h, w, self.cnn3)
+        self.flat_dim = h * w * self.cnn3.out_channels
+        self.relu = nn.Tanh()
         init_orthogonal(self)
 
     def forward(self, input: torch.Tensor):
         x = self.cnn1(input)
         x = self.relu(x)
         x = self.cnn2(x)
+        x = self.relu(x)
+        x = self.cnn3(x)
         x = x.flatten(1)
         return x
 
@@ -67,9 +71,8 @@ class ValueNet(nn.Module):
         nn.Module.__init__(self)
         self.base_net = BaseNet(obs_shape)
         self.v_layer1 = nn.Linear(self.base_net.flat_dim, 512)
-        self.v_layer2 = nn.Linear(512, 512)
-        self.v_layer3 = nn.Linear(512, 1)
-        self.relu = nn.ReLU()
+        self.v_layer2 = nn.Linear(512, 1)
+        self.relu = nn.Tanh()
         init_orthogonal(self)
 
     def forward(self, input: torch.Tensor):
@@ -78,8 +81,6 @@ class ValueNet(nn.Module):
         x = self.v_layer1(x)
         x = self.relu(x)
         x = self.v_layer2(x)
-        x = self.relu(x)
-        x = self.v_layer3(x)
         return x
 
 
@@ -88,9 +89,8 @@ class PolicyNet(nn.Module):
         nn.Module.__init__(self)
         self.base_net = BaseNet(obs_shape)
         self.a_layer1 = nn.Linear(self.base_net.flat_dim, 512)
-        self.a_layer2 = nn.Linear(512, 512)
-        self.a_layer3 = nn.Linear(512, action_count)
-        self.relu = nn.ReLU()
+        self.a_layer2 = nn.Linear(512, action_count)
+        self.relu = nn.Tanh()
         self.logits = nn.LogSoftmax(1)
         init_orthogonal(self)
 
@@ -100,8 +100,6 @@ class PolicyNet(nn.Module):
         x = self.a_layer1(x)
         x = self.relu(x)
         x = self.a_layer2(x)
-        x = self.relu(x)
-        x = self.a_layer3(x)
         x = x * (1 - mask) + mask * -1 * 10**8
         return self.logits(x)
 
@@ -111,7 +109,7 @@ test_env = PacmanGym()
 
 # If evaluating, just run the eval env
 if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
-    test_env = PacmanGym(random_start=False, render_mode="human")
+    test_env = PacmanGym(random_start=True, render_mode="human")
     p_net = torch.load("temp/PNet.pt")
     obs_shape = test_env.observation_space.shape
     if not obs_shape:
@@ -121,7 +119,7 @@ if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
         obs_, info = test_env.reset()
         action_mask = np.array(list(info["action_mask"]))
         obs = torch.from_numpy(obs_).float()
-        for _ in range(max_eval_steps):
+        while True:
             distr = Categorical(logits=p_net(obs.unsqueeze(0), action_mask).squeeze())
             action = distr.sample().item()
             obs_, reward, done, _, info = test_env.step(action)
@@ -129,7 +127,10 @@ if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
             obs = torch.from_numpy(obs_).float()
             action_mask = np.array(list(info["action_mask"]))
             if done:
-                break
+                obs_, info = test_env.reset()
+                action_mask = np.array(list(info["action_mask"]))
+                obs = torch.from_numpy(obs_).float()
+                p_net = torch.load("temp/PNet.pt")
     quit()
 
 wandb.init(
@@ -145,8 +146,6 @@ wandb.init(
         "lambda": lambda_,
         "epsilon": epsilon,
         "max_eval_steps": max_eval_steps,
-        "v_lr": v_lr,
-        "p_lr": p_lr,
     },
 )
 
@@ -163,8 +162,10 @@ if not isinstance(act_space, Discrete):
     raise RuntimeError("Action space was not discrete")
 v_net = ValueNet(torch.Size(obs_shape))
 p_net = PolicyNet(obs_size, int(act_space.n))
-v_opt = torch.optim.Adam(v_net.parameters(), lr=v_lr)
-p_opt = torch.optim.Adam(p_net.parameters(), lr=p_lr)
+v_opt = torch.optim.Adam(v_net.parameters(), lr=0.000001)
+p_opt = torch.optim.Adam(p_net.parameters(), lr=0.0000001)
+v_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(v_opt, "max", 0.33, 20, min_lr=v_lr)
+p_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(p_opt, "max", 0.33, 20, min_lr=p_lr)
 buffer = RolloutBuffer(
     obs_size,
     torch.Size((1,)),
@@ -263,12 +264,18 @@ for step in tqdm(range(iterations), position=0):
             "avg_v_loss": total_v_loss / train_iters,
             "avg_p_loss": total_p_loss / train_iters,
             "smooth_eval_score": smooth_eval_score,
+            "v_lr": v_opt.param_groups[-1]["lr"],
+            "p_lr": p_opt.param_groups[-1]["lr"],
         }
     )
 
-    # Perform backups
+    # Update learning rate
     smooth_update = 0.04
     smooth_eval_score += smooth_update * (score_total / eval_steps - smooth_eval_score)
+    v_scheduler.step(smooth_eval_score)
+    p_scheduler.step(smooth_eval_score)
+    
+    # Perform backups
     if (step + 1) % 10 == 0:
         if smooth_eval_score >= last_eval_score:
             torch.save(v_net, "temp/VNetBest.pt")

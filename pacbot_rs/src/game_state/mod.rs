@@ -114,7 +114,7 @@ impl GameState {
     pub fn is_frightened(&self) -> bool {
         self.state == GameStateState::Frightened
     }
-    
+
     /// Returns the current ghost state (scatter, chase, frightened) as an integer.
     pub fn state(&self) -> u32 {
         self.state as u32
@@ -203,6 +203,12 @@ impl GameState {
             self.check_if_ghosts_eaten();
             if self.update_ticks % TICKS_PER_UPDATE == 0 {
                 self.update_ghosts();
+                // This isn't in the original game code, but Pacman can actually
+                // safely teleport into a ghost if you don't check twice per
+                // loop
+                if self.should_die() {
+                    self.die();
+                }
                 self.check_if_ghosts_eaten();
                 if self.state == GameStateState::Frightened {
                     if self.frightened_counter == 1 {

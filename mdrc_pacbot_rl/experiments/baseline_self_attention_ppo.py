@@ -17,23 +17,24 @@ from gymnasium.spaces.discrete import Discrete
 from gymnasium.vector.sync_vector_env import SyncVectorEnv
 from torch.distributions import Categorical
 from tqdm import tqdm
+from gymnasium.wrappers.normalize import NormalizeReward
 
 from mdrc_pacbot_rl.algorithms.ppo import train_ppo
 from mdrc_pacbot_rl.algorithms.rollout_buffer import RolloutBuffer
 from mdrc_pacbot_rl.algorithms.self_attention import AttnBlock
-from mdrc_pacbot_rl.pacman.gym import NaivePacmanGym as PacmanGym
+from mdrc_pacbot_rl.pacman.gym import SelfAttentionPacmanGym as PacmanGym
 from mdrc_pacbot_rl.utils import init_xavier
 
 _: Any
 
 # Hyperparameters
-num_envs = 32  # Number of environments to step through at once during sampling.
+num_envs = 128  # Number of environments to step through at once during sampling.
 train_steps = 32  # Number of steps to step through during sampling. Total # of samples is train_steps * num_envs/
 iterations = 20000  # Number of sample/train iterations.
 train_iters = 1  # Number of passes over the samples collected.
 train_batch_size = 512  # Minibatch size while training models.
-discount = 0.0  # Discount factor applied to rewards.
-lambda_ = 0.0  # Lambda for GAE.
+discount = 0.5  # Discount factor applied to rewards.
+lambda_ = 0.7  # Lambda for GAE.
 epsilon = 0.2  # Epsilon for importance sample clipping.
 eval_steps = 4  # Number of eval runs to average over.
 max_eval_steps = 300  # Max number of steps to take during each eval run.
@@ -183,7 +184,7 @@ class PolicyNet(nn.Module):
         return self.softmax(x)
 
 
-env = SyncVectorEnv([lambda: PacmanGym() for _ in range(num_envs)])
+env = SyncVectorEnv([lambda: NormalizeReward(PacmanGym(random_start=True)) for _ in range(num_envs)])
 test_env = PacmanGym()
 
 # If evaluating, just run the eval env
@@ -248,7 +249,7 @@ p_opt = torch.optim.Adam(p_net.parameters(), lr=0.0)
 buffer = RolloutBuffer(
     torch.Size(obs_size),
     torch.Size((1,)),
-    torch.Size((5,)),
+    torch.Size((int(act_space.n),)),
     torch.int,
     num_envs,
     train_steps,
@@ -260,9 +261,6 @@ obs = process_obs(obs_, obs_mask)
 action_mask = np.array(list(info["action_mask"]))
 smooth_eval_score = 0.0
 last_eval_score = 0.0
-anneal_discount_after = 1000
-last_discount = discount
-discount_change = 0.00005
 for step in tqdm(range(iterations), position=0):
     # Collect experience
     with torch.no_grad():
@@ -296,6 +294,7 @@ for step in tqdm(range(iterations), position=0):
         discount,
         lambda_,
         epsilon,
+        gradient_steps=4,
     )
     buffer.clear()
 
