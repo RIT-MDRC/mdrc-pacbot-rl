@@ -67,7 +67,7 @@ struct PfPosition {
 }
 
 impl PfPosition {
-    fn dist(&self, other: PfPosition) -> f64 {
+    fn dist(&self, other: &PfPosition) -> f64 {
         ((self.x - other.x).powf(2.0) + (self.y - other.y).powf(2.0)).sqrt()
     }
 
@@ -93,8 +93,28 @@ pub struct ParticleFilter {
 
 #[pymethods]
 impl ParticleFilter {
+    pub fn get_points(&self) -> Vec<((f64, f64), f64)> {
+        self.points.iter().map(|p| ((p.pos.x, p.pos.y), p.angle)).collect()
+    }
+
+    pub fn get_empty_grid_cells(&self) -> Vec<(f64, f64)> {
+        self.empty_grid_cells.iter().map(|p| (p.x, p.y)).collect()
+    }
+
+    pub fn get_map_segments_list(&self) -> Vec<(f64, f64, f64, f64)> {
+        let (horiz, vert) = &self.map_segments;
+        let mut segments = Vec::new();
+        for h in horiz {
+            segments.push((h.x_min, h.x_max, h.y, h.y));
+        }
+        for v in vert {
+            segments.push((v.x, v.x, v.y_min, v.y_max));
+        }
+        segments
+    }
+
     #[new]
-    pub fn new(pacbot_pos: (usize, usize, f64)) -> Self {
+    pub fn new(pacbot_x: usize, pacbot_y: usize, pacbot_angle: f64) -> Self {
         let empty_pose = PfPose {
             pos: PfPosition { x: 0.0, y: 0.0 },
             angle: 0.0,
@@ -110,10 +130,10 @@ impl ParticleFilter {
         let mut pf = Self {
             pacbot_pose: PfPose {
                 pos: PfPosition {
-                    x: pacbot_pos.0 as f64,
-                    y: pacbot_pos.1 as f64,
+                    x: pacbot_x as f64,
+                    y: pacbot_y as f64,
                 },
-                angle: pacbot_pos.2,
+                angle: pacbot_angle,
             },
             points,
             empty_grid_cells,
@@ -253,7 +273,7 @@ impl ParticleFilter {
     }
 
     fn update_cell_sort(&mut self) {
-        self.empty_grid_cells.sort_by_key(|a| NotNan::new(a.dist(self.pacbot_pose.pos)).unwrap());
+        self.empty_grid_cells.sort_by_key(|a| NotNan::new(a.dist(&self.pacbot_pose.pos)).unwrap());
     }
 
     fn random_point(&self) -> PfPose {
@@ -304,5 +324,121 @@ impl ParticleFilter {
         }
 
         min_distance
+    }
+}
+
+mod test {
+    use super::*;
+
+    fn assert_close(a: f64, b: f64) {
+        assert!((a - b).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_horizontal_segment() {
+        let segment = HorizontalSegment {
+            x_min: 0.0,
+            x_max: 1.0,
+            y: 0.0,
+        };
+
+        assert_eq!(segment.raycast(0.5, 0.5, 0.0, -1.0), Some(0.5));
+        assert_eq!(segment.raycast(0.5, 0.5, 0.0, 1.0), None);
+        assert_eq!(segment.raycast(0.5, 0.5, 1.0, 0.0), None);
+        assert_eq!(segment.raycast(0.5, 0.5, -1.0, 0.0), None);
+
+        let mut pi_over4 = -std::f64::consts::PI / 4.0;
+        assert_close(segment.raycast(0.0, 0.5, pi_over4.cos(), pi_over4.sin()).unwrap(),
+                     (2.0 as f64).sqrt()/2.0);
+
+        pi_over4 *= 3.0;
+        assert_eq!(segment.raycast(0.0, 0.5, pi_over4.cos(), pi_over4.sin()), None);
+
+        // from underneath
+        assert_eq!(segment.raycast(0.5, -0.5, 0.0, 1.0), Some(0.5));
+        assert_eq!(segment.raycast(0.5, -0.5, 0.0, -1.0), None);
+        assert_eq!(segment.raycast(0.5, -0.5, 1.0, 0.0), None);
+        assert_eq!(segment.raycast(0.5, -0.5, -1.0, 0.0), None);
+
+        pi_over4 = std::f64::consts::PI / 4.0;
+        assert_close(segment.raycast(0.0, -0.5, pi_over4.cos(), pi_over4.sin()).unwrap(),
+                     (2.0 as f64).sqrt()/2.0);
+
+        pi_over4 *= 3.0;
+        assert_eq!(segment.raycast(0.0, -0.5, pi_over4.cos(), pi_over4.sin()), None);
+    }
+
+    #[test]
+    fn test_vertical_segment() {
+        let segment = VerticalSegment {
+            x: 0.0,
+            y_min: 0.0,
+            y_max: 1.0,
+        };
+
+        assert_eq!(segment.raycast(0.5, 0.5, -1.0, 0.0), Some(0.5));
+        assert_eq!(segment.raycast(0.5, 0.5, 1.0, 0.0), None);
+        assert_eq!(segment.raycast(0.5, 0.5, 0.0, 1.0), None);
+        assert_eq!(segment.raycast(0.5, 0.5, 0.0, -1.0), None);
+
+        let mut pi_over4 = std::f64::consts::PI * 3.0 / 4.0;
+        assert_close(segment.raycast(0.5, 0.0, pi_over4.cos(), pi_over4.sin()).unwrap(),
+                     (2.0 as f64).sqrt()/2.0);
+
+        pi_over4 = pi_over4 / 3.0 * 5.0;
+        assert_eq!(segment.raycast(0.5, 0.0, pi_over4.cos(), pi_over4.sin()), None);
+
+        // from the left
+        assert_eq!(segment.raycast(-0.5, 0.5, 1.0, 0.0), Some(0.5));
+        assert_eq!(segment.raycast(-0.5, 0.5, -1.0, 0.0), None);
+        assert_eq!(segment.raycast(-0.5, 0.5, 0.0, 1.0), None);
+        assert_eq!(segment.raycast(-0.5, 0.5, 0.0, -1.0), None);
+
+        pi_over4 = std::f64::consts::PI / 4.0;
+        assert_close(segment.raycast(-0.5, 0.0, pi_over4.cos(), pi_over4.sin()).unwrap(),
+                     (2.0 as f64).sqrt()/2.0);
+
+        pi_over4 = pi_over4 * 3.0;
+        assert_eq!(segment.raycast(-0.5, 0.0, pi_over4.cos(), pi_over4.sin()), None);
+    }
+
+    #[test]
+    fn test_pf_position_update_by() {
+        let mut pos = PfPosition { x: 0.0, y: 0.0 };
+        pos.update_by(1.0, 0.0);
+        assert_close(pos.x, 1.0);
+        assert_close(pos.y, 0.0);
+
+        pos.update_by(1.0, std::f64::consts::PI / 2.0);
+        assert_close(pos.x, 1.0);
+        assert_close(pos.y, 1.0);
+
+        pos.update_by(1.0, std::f64::consts::PI);
+        assert_close(pos.x, 0.0);
+        assert_close(pos.y, 1.0);
+
+        pos.update_by(1.0, std::f64::consts::PI * 3.0 / 2.0);
+        assert_close(pos.x, 0.0);
+        assert_close(pos.y, 0.0);
+
+        pos.update_by(1.0, std::f64::consts::PI * 2.0);
+        assert_close(pos.x, 1.0);
+        assert_close(pos.y, 0.0);
+    }
+
+    #[test]
+    fn test_pf_position_dist() {
+        let pos1 = PfPosition { x: 0.0, y: 0.0 };
+        let pos2 = PfPosition { x: 1.0, y: 0.0 };
+        assert_close(pos1.dist(&pos2), 1.0);
+
+        let pos2 = PfPosition { x: 0.0, y: 1.0 };
+        assert_close(pos1.dist(&pos2), 1.0);
+
+        let pos2 = PfPosition { x: 1.0, y: 1.0 };
+        assert_close(pos1.dist(&pos2), (2.0 as f64).sqrt());
+
+        let pos2 = PfPosition { x: 2.0, y: 2.0 };
+        assert_close(pos1.dist(&pos2), (8.0 as f64).sqrt());
     }
 }
