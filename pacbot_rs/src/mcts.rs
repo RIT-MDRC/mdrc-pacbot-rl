@@ -7,6 +7,9 @@ use crate::game_state::env::{Action, PacmanGym};
 /// The type for returns (cumulative rewards).
 type Return = f32;
 
+/// The factor used to discount future rewards each timestep.
+const DISCOUNT_FACTOR: f32 = 1.0;
+
 #[derive(Default)]
 struct SearchTreeEdge {
     visit_count: u32,
@@ -76,7 +79,7 @@ impl SearchTreeNode {
             edge.child = Some(Default::default());
             leaf_evaluator(env)
         };
-        let this_return = reward as Return + subsequent_return;
+        let this_return = reward as Return + DISCOUNT_FACTOR * subsequent_return;
 
         // update the stats for this action
         self.visit_count += 1;
@@ -146,6 +149,13 @@ impl MCTSContext {
     /// Returns the action at the root with the highest expected return.
     pub fn best_action(&self, env: &PacmanGym) -> Action {
         self.root.best_action(env)
+    }
+
+    /// Returns the action visit distribution at the root node.
+    pub fn action_distribution(&self) -> [f32; 5] {
+        array_init::map_array_init(&self.root.children, |edge| {
+            edge.visit_count as f32 / self.root.visit_count as f32
+        })
     }
 
     /// Performs MCTS iterations to grow the tree to (approximately) the given size,
