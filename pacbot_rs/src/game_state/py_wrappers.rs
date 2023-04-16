@@ -14,13 +14,24 @@ use pyo3::{
 use static_assertions::assert_eq_size;
 
 use super::GameState;
-use crate::{ghost_agent::GhostAgent, variables::GridValue};
+use crate::{
+    ghost_agent::GhostAgent,
+    variables::{Direction, GridValue},
+};
 
 /// Wraps a reference to one of a GameState's ghosts.
 #[pyclass]
 struct GhostAgentWrapper {
     game_state: Py<GameState>,
     get_ghost: fn(&GameState) -> &RefCell<GhostAgent>,
+}
+
+impl GhostAgentWrapper {
+    fn with_ghost<T, F: FnOnce(&mut GhostAgent) -> T>(&self, py: Python<'_>, f: F) -> T {
+        let game_state = self.game_state.borrow(py);
+        let mut ghost = (self.get_ghost)(&game_state).borrow_mut();
+        f(&mut ghost)
+    }
 }
 
 #[pymethods]
@@ -33,11 +44,28 @@ impl GhostAgentWrapper {
         }
     }
 
-    fn clear_start_path(&mut self, py: Python<'_>) -> PyResult<()> {
-        let game_state = self.game_state.borrow(py);
-        let mut ghost = (self.get_ghost)(&game_state).borrow_mut();
-        ghost.start_path = &[];
-        Ok(())
+    #[getter]
+    fn direction(&self, py: Python<'_>) -> Direction {
+        self.with_ghost(py, |ghost| ghost.direction)
+    }
+
+    #[setter]
+    fn set_direction(&self, py: Python<'_>, value: Direction) {
+        self.with_ghost(py, |ghost| ghost.direction = value);
+    }
+
+    #[getter]
+    fn frightened_counter(&self, py: Python<'_>) -> u32 {
+        self.with_ghost(py, |ghost| ghost.frightened_counter)
+    }
+
+    #[setter]
+    fn set_frightened_counter(&self, py: Python<'_>, value: u32) {
+        self.with_ghost(py, |ghost| ghost.frightened_counter = value);
+    }
+
+    fn clear_start_path(&mut self, py: Python<'_>) {
+        self.with_ghost(py, |ghost| ghost.start_path = &[]);
     }
 }
 

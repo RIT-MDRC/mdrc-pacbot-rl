@@ -7,6 +7,9 @@ class GhostAgent:
     @property
     def pos(self) -> Mapping[Literal["current", "next"], tuple[int, int]]: ...
 
+    direction: int
+    frightened_counter: int
+
 class PacBot:
     def update(self, position: tuple[int, int]) -> None: ...
     @property

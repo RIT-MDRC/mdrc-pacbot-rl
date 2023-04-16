@@ -31,7 +31,7 @@ pub struct GhostAgent {
     pub frightened_counter: u32,
     pub current_pos: (usize, usize),
     pub next_pos: (usize, usize),
-    direction: Direction,
+    pub direction: Direction,
 }
 
 impl GhostAgent {
