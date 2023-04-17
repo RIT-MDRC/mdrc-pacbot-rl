@@ -10,6 +10,7 @@ use crate::{
     ghost_agent::{GhostAgent, GhostColor},
     ghost_paths::*,
     grid::{GRID, GRID_PELLET_COUNT, GRID_POWER_PELLET_COUNT},
+    impl_enum_pyint_conversion,
     pacbot::PacBot,
     variables::{
         GridValue, CHERRY_POS, CHERRY_SCORE, FRIGHTENED_LENGTH, GAME_FREQUENCY, GHOST_SCORE,
@@ -28,6 +29,8 @@ pub enum GameStateState {
     Chase = 2,
     Frightened = 3,
 }
+
+impl_enum_pyint_conversion!(GameStateState);
 
 #[derive(Clone)]
 #[pyclass]
@@ -54,22 +57,26 @@ pub struct GameState {
     cherry: bool,
     prev_cherry_pellets: u32,
     old_state: GameStateState,
+    #[pyo3(get, set)]
     pub state: GameStateState,
     pub just_swapped_state: bool,
+    #[pyo3(get, set)]
     frightened_counter: u32,
     frightened_multiplier: u32,
     /// The current score.
-    #[pyo3(get)]
+    #[pyo3(get, set)]
     pub score: u32,
     /// Whether the game is currently playing (not paused/ended).
-    #[pyo3(get)]
+    #[pyo3(get, set)]
     pub play: bool,
     pub start_counter: u32,
     state_counter: u32,
+    #[pyo3(get, set)]
     update_ticks: u32,
     /// The number of remaining lives.
-    #[pyo3(get)]
+    #[pyo3(get, set)]
     lives: u8,
+    #[pyo3(get, set)]
     ticks_since_spawn: u32,
 }
 
@@ -115,11 +122,6 @@ impl GameState {
     /// Returns whether the current state is frightened.
     pub fn is_frightened(&self) -> bool {
         self.state == GameStateState::Frightened
-    }
-
-    /// Returns the current ghost state (scatter, chase, frightened) as an integer.
-    pub fn state(&self) -> u32 {
-        self.state as u32
     }
 
     #[new]

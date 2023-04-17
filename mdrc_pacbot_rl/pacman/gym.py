@@ -631,7 +631,7 @@ class SelfAttentionPacmanGym(BasePacmanGym):
         state = np.zeros([3] + list(grid.shape))
         for i, pos in enumerate(entity_positions):
             self.entities[i][pos[0]][pos[1]] = 1
-            state[self.game_state.state() - 1][pos[0]][pos[1]] = 1
+            state[self.game_state.state - 1][pos[0]][pos[1]] = 1
 
         pac_pos = self.game_state.pacbot.pos
         self.pacman *= 0.5

@@ -1,6 +1,7 @@
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+
+use crate::impl_enum_pyint_conversion;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, IntoPrimitive, TryFromPrimitive)]
 #[repr(u8)]
@@ -11,18 +12,7 @@ pub enum Direction {
     Down = 3,
 }
 
-impl<'source> FromPyObject<'source> for Direction {
-    fn extract(ob: &'source PyAny) -> PyResult<Self> {
-        let index: u8 = ob.extract()?;
-        Direction::try_from_primitive(index).map_err(|_| PyValueError::new_err("Invalid direction"))
-    }
-}
-
-impl IntoPy<PyObject> for Direction {
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        u8::from(self).into_py(py)
-    }
-}
+impl_enum_pyint_conversion!(Direction);
 
 /// Enum for grid cell values.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, IntoPrimitive, TryFromPrimitive)]
