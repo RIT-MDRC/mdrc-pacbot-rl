@@ -33,6 +33,8 @@ pub enum GridValue {
     c = 6,
 }
 
+impl_enum_pyint_conversion!(GridValue);
+
 /*
 # input signal enums
 sig_normal = 0

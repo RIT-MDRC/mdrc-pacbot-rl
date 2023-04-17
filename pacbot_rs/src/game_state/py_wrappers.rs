@@ -212,10 +212,20 @@ struct GridRowWrapper {
 
 #[pymethods]
 impl GridRowWrapper {
-    fn __getitem__(&self, py: Python<'_>, index: usize) -> PyResult<u8> {
+    fn __getitem__(&self, py: Python<'_>, index: usize) -> PyResult<GridValue> {
         let game_state = self.game_state.borrow(py);
         if index < game_state.grid[self.row].len() {
-            Ok(game_state.grid[self.row][index].into())
+            Ok(game_state.grid[self.row][index])
+        } else {
+            Err(PyIndexError::new_err("grid column index out of range"))
+        }
+    }
+
+    fn __setitem__(&self, py: Python<'_>, index: usize, value: GridValue) -> PyResult<()> {
+        let mut game_state = self.game_state.borrow_mut(py);
+        if index < game_state.grid[self.row].len() {
+            game_state.grid[self.row][index] = value;
+            Ok(())
         } else {
             Err(PyIndexError::new_err("grid column index out of range"))
         }
