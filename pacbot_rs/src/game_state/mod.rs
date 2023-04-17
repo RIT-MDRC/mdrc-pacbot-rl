@@ -120,6 +120,12 @@ impl GameState {
         self.state as u32
     }
 
+    /// Returns the frightened counter.
+    pub fn frightened_counter(&self) -> u32 {
+        self.frightened_counter
+    }
+
+
     #[new]
     pub fn new() -> Self {
         let mut game_state = Self {

@@ -142,7 +142,7 @@ class BasePacmanGym(gym.Env):
         """
         Returns the current action mask.
         """
-        mask = [1, 0, 0, 0, 0]
+        mask = [0, 0, 0, 0, 0]
         pos = self.game_state.pacbot.pos
         if pos[1] == GRID_HEIGHT - 1 or self.game_state.grid[pos[0]][pos[1] + 1] in (
             1,
@@ -315,7 +315,7 @@ class SemanticChannelPacmanGym(BasePacmanGym):
     def __init__(
         self,
         random_start: bool = False,
-        ticks_per_step: int = 12,
+        ticks_per_step: int = 8,
         render_mode: str = "",
     ):
         """
@@ -323,7 +323,7 @@ class SemanticChannelPacmanGym(BasePacmanGym):
             random_start: If Pacman should start on a random cell.
             ticks_per_step: How many ticks the game should move every step. Ghosts move every 12 ticks.
         """
-        self.observation_space = Box(-1.0, 1.0, (2, GRID_WIDTH, GRID_HEIGHT))
+        self.observation_space = Box(-1.0, 1.0, (14, GRID_WIDTH, GRID_HEIGHT))
         self.action_space = Discrete(5)
         self.ticks_per_step = ticks_per_step
         BasePacmanGym.__init__(self, random_start, render_mode)
@@ -380,8 +380,6 @@ class SemanticChannelPacmanGym(BasePacmanGym):
         reward = (self.game_state.score - self.last_score) / variables.ghost_score
         if done and self.game_state.lives < 3:
             reward = 0
-        if reward == float("Nan"):
-            reward = 0
         self.last_score = self.game_state.score
 
         self.handle_rendering()
@@ -400,8 +398,10 @@ class SemanticChannelPacmanGym(BasePacmanGym):
             self.game_state.blue.pos["current"],
         ]
         ghost = np.zeros([4] + list(grid.shape))
+        state = np.zeros([3] + list(grid.shape))
         for i, pos in enumerate(entity_positions):
             ghost[i][pos[0]][pos[1]] = 1
+            state[self.game_state.state() - 1][pos[0]][pos[1]] = 1 if i != 3 else (self.game_state.frightened_counter() - 1) / variables.frightened_length
 
         last_ghost = np.zeros(ghost.shape)
         for i, pos in enumerate(self.last_ghost_pos):
@@ -415,12 +415,12 @@ class SemanticChannelPacmanGym(BasePacmanGym):
             + fright_ghost * variables.ghost_score
         ) / variables.ghost_score
 
+
         pac_pos = self.game_state.pacbot.pos
         pacman = np.zeros(grid.shape)
         pacman[pac_pos[0]][pac_pos[1]] = 1
 
-        obs = np.concatenate([np.stack([wall, reward]), ghost], 0)
-        return np.stack([obs.mean(0), pacman])
+        return np.concatenate([np.stack([wall, pacman, reward]), ghost, last_ghost, state], 0)
 
 
 class SemanticPacmanGym(BasePacmanGym):

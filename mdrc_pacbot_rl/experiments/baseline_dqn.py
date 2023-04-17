@@ -32,11 +32,11 @@ INF = 10**8
 
 # Hyperparameters
 num_envs = 32  # Number of environments to step through at once during sampling.
-train_steps = 32  # Number of steps to step through during sampling. Total # of samples is train_steps * num_envs.
-iterations = 10000  # Number of sample/train iterations.
-train_iters = 4  # Number of passes over the samples collected.
+train_steps = 4  # Number of steps to step through during sampling. Total # of samples is train_steps * num_envs.
+iterations = 100000  # Number of sample/train iterations.
+train_iters = 1  # Number of passes over the samples collected.
 train_batch_size = 512  # Minibatch size while training models.
-discount = 0.5  # Discount factor applied to rewards.
+discount = 0.99  # Discount factor applied to rewards.
 q_epsilon = 1.0  # Epsilon for epsilon greedy strategy. This gets annealed over time.
 eval_steps = 1  # Number of eval runs to average over.
 max_eval_steps = 300  # Max number of steps to take during each eval run.
@@ -49,11 +49,11 @@ class BaseNet(nn.Module):
     def __init__(self, obs_shape: torch.Size):
         nn.Module.__init__(self)
         d, c, w, h = obs_shape
-        self.cnn1 = nn.Conv2d(c * d, 32, 5)
+        self.cnn1 = nn.Conv2d(c * d, 16, 3, padding=1)
         h, w = get_img_size(h, w, self.cnn1)
-        self.cnn2 = nn.Conv2d(32, 64, 5)
+        self.cnn2 = nn.Conv2d(16, 32, 3, padding=1)
         h, w = get_img_size(h, w, self.cnn2)
-        self.cnn3 = nn.Conv2d(64, 64, 5)
+        self.cnn3 = nn.Conv2d(32, 64, 3, padding=1)
         h, w = get_img_size(h, w, self.cnn3)
         self.flat_dim = 64
         self.relu = nn.ReLU()
@@ -79,11 +79,11 @@ class QNet(nn.Module):
         nn.Module.__init__(self)
         self.net = BaseNet(obs_shape)
         self.relu = nn.ReLU()
-        self.linear = nn.Linear(self.net.flat_dim, 256)
+        self.linear = nn.Linear(self.net.flat_dim, 128)
         self.advantage = nn.Sequential(
-            nn.Linear(256, action_count)
+            nn.Linear(128, action_count)
         )
-        self.value = nn.Sequential(nn.Linear(256, 1))
+        self.value = nn.Sequential(nn.Linear(128, 1))
         self.action_count = action_count
         init_orthogonal(self)
 
@@ -96,7 +96,7 @@ class QNet(nn.Module):
         value = self.value(x)
         return value + advantage - advantage.mean(1, keepdim=True)
 
-stacked_frames = 4
+stacked_frames = 1
 env = SyncVectorEnv(
     [lambda: FrameStack(TimeLimit(PacmanGym(random_start=True), 300), stacked_frames) for _ in range(num_envs)]
 )
@@ -184,7 +184,7 @@ for step in tqdm(range(iterations), position=0):
                 actions_list = []
                 for mask in action_mask:
                     actions_list.append(
-                        np.random.choice(act_space.n, p=mask / mask.sum())
+                        np.random.choice(act_space.n, p=(1 - mask) / (1 - mask).sum())
                     )
                 actions_ = np.array(actions_list)
             else:
@@ -236,9 +236,9 @@ for step in tqdm(range(iterations), position=0):
                 next_actions = (
                     torch.where(next_masks == 1, -INF, q_net(states)).argmax(1).squeeze(0)
                 )
-                q_target = rewards + discount * q_net_target(states).detach().index_select(
-                    1, next_actions
-                ) * (1.0 - dones)
+                q_target = rewards.unsqueeze(1) + discount * q_net_target(states).detach().gather(
+                    1, next_actions.unsqueeze(1)
+                ) * (1.0 - dones.unsqueeze(1))
             diff = q_net(prev_states).gather(1, actions.unsqueeze(1)) - q_target
             q_loss = (diff * diff).mean()
             q_loss.backward()
@@ -300,7 +300,7 @@ for step in tqdm(range(iterations), position=0):
         )
 
     # Update Q target
-    if (step + 1) % 200 == 0:
+    if (step + 1) % 500 == 0:
         q_net_target.load_state_dict(q_net.state_dict())
 
     # Perform backups
