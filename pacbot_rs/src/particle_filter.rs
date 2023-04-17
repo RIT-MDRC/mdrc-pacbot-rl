@@ -1,7 +1,7 @@
 use rand::distributions::Uniform;
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
-use crate::grid::{GRID, NODE_COORDS, NUM_NODES};
+use crate::grid::{GRID, is_walkable, NODE_COORDS, NUM_NODES};
 use crate::variables::{INNER_CELL_WIDTH, ROBOT_WIDTH};
 use pyo3::prelude::*;
 
@@ -122,7 +122,7 @@ impl ParticleFilter {
 
         let empty_grid_cells = NODE_COORDS.map(|(x, y)| PfPosition {
             x: x as f64,
-            y: y as f64
+            y: y as f64,
         });
 
         let points = [empty_pose; PARTICLE_FILTER_POINTS];
@@ -219,6 +219,7 @@ impl ParticleFilter {
 
             let diff = (distance - sensor_distance).abs();
 
+
             error += diff;
         }
 
@@ -236,7 +237,7 @@ impl ParticleFilter {
         for y in 0..grid_height - 1 {
             let mut seg_start_x: Option<usize> = None;
             for x in 0..grid_width {
-                let is_wall_here = GRID[x][y] != GRID[x][y + 1];
+                let is_wall_here = is_walkable((x, y)) != is_walkable((x, y + 1));
                 if is_wall_here && seg_start_x == None {
                     seg_start_x = Some(x - 1);
                 }
@@ -254,7 +255,7 @@ impl ParticleFilter {
         for x in 0..grid_width - 1 {
             let mut seg_start_y: Option<usize> = None;
             for y in 0..grid_height {
-                let is_wall_here = GRID[x][y] != GRID[x + 1][y];
+                let is_wall_here = is_walkable((x, y)) != is_walkable((x + 1, y));
                 if is_wall_here && seg_start_y == None {
                     seg_start_y = Some(y - 1);
                 }
@@ -349,7 +350,7 @@ mod test {
 
         let mut pi_over4 = -std::f64::consts::PI / 4.0;
         assert_close(segment.raycast(0.0, 0.5, pi_over4.cos(), pi_over4.sin()).unwrap(),
-                     (2.0 as f64).sqrt()/2.0);
+                     (2.0 as f64).sqrt() / 2.0);
 
         pi_over4 *= 3.0;
         assert_eq!(segment.raycast(0.0, 0.5, pi_over4.cos(), pi_over4.sin()), None);
@@ -362,7 +363,7 @@ mod test {
 
         pi_over4 = std::f64::consts::PI / 4.0;
         assert_close(segment.raycast(0.0, -0.5, pi_over4.cos(), pi_over4.sin()).unwrap(),
-                     (2.0 as f64).sqrt()/2.0);
+                     (2.0 as f64).sqrt() / 2.0);
 
         pi_over4 *= 3.0;
         assert_eq!(segment.raycast(0.0, -0.5, pi_over4.cos(), pi_over4.sin()), None);
@@ -383,7 +384,7 @@ mod test {
 
         let mut pi_over4 = std::f64::consts::PI * 3.0 / 4.0;
         assert_close(segment.raycast(0.5, 0.0, pi_over4.cos(), pi_over4.sin()).unwrap(),
-                     (2.0 as f64).sqrt()/2.0);
+                     (2.0 as f64).sqrt() / 2.0);
 
         pi_over4 = pi_over4 / 3.0 * 5.0;
         assert_eq!(segment.raycast(0.5, 0.0, pi_over4.cos(), pi_over4.sin()), None);
@@ -396,7 +397,7 @@ mod test {
 
         pi_over4 = std::f64::consts::PI / 4.0;
         assert_close(segment.raycast(-0.5, 0.0, pi_over4.cos(), pi_over4.sin()).unwrap(),
-                     (2.0 as f64).sqrt()/2.0);
+                     (2.0 as f64).sqrt() / 2.0);
 
         pi_over4 = pi_over4 * 3.0;
         assert_eq!(segment.raycast(-0.5, 0.0, pi_over4.cos(), pi_over4.sin()), None);
