@@ -25,7 +25,12 @@ from tqdm import tqdm
 from mdrc_pacbot_rl.algorithms.ppo import train_ppo
 from mdrc_pacbot_rl.algorithms.replay_buffer import ReplayBuffer
 from mdrc_pacbot_rl.pacman.gym import SemanticChannelPacmanGym as PacmanGym
-from mdrc_pacbot_rl.utils import copy_params, get_img_size, get_img_size_3d, init_orthogonal
+from mdrc_pacbot_rl.utils import (
+    copy_params,
+    get_img_size,
+    get_img_size_3d,
+    init_orthogonal,
+)
 
 _: Any
 INF = 10**8
@@ -36,7 +41,7 @@ train_steps = 4  # Number of steps to step through during sampling. Total # of s
 iterations = 100000  # Number of sample/train iterations.
 train_iters = 1  # Number of passes over the samples collected.
 train_batch_size = 512  # Minibatch size while training models.
-discount = 0.99  # Discount factor applied to rewards.
+discount = 0.999  # Discount factor applied to rewards.
 q_epsilon = 1.0  # Epsilon for epsilon greedy strategy. This gets annealed over time.
 eval_steps = 1  # Number of eval runs to average over.
 max_eval_steps = 300  # Max number of steps to take during each eval run.
@@ -81,9 +86,9 @@ class QNet(nn.Module):
         self.relu = nn.ReLU()
         self.linear = nn.Linear(self.net.flat_dim, 128)
         self.advantage = nn.Sequential(
-            nn.Linear(128, action_count)
+            nn.Linear(128, 128), nn.ReLU(), nn.Linear(128, action_count)
         )
-        self.value = nn.Sequential(nn.Linear(128, 1))
+        self.value = nn.Sequential(nn.Linear(128, 128), nn.ReLU(), nn.Linear(128, 1))
         self.action_count = action_count
         init_orthogonal(self)
 
@@ -96,15 +101,21 @@ class QNet(nn.Module):
         value = self.value(x)
         return value + advantage - advantage.mean(1, keepdim=True)
 
+
 stacked_frames = 1
 env = SyncVectorEnv(
-    [lambda: FrameStack(TimeLimit(PacmanGym(random_start=True), 300), stacked_frames) for _ in range(num_envs)]
+    [
+        lambda: FrameStack(TimeLimit(PacmanGym(random_start=True), 600), stacked_frames)
+        for _ in range(num_envs)
+    ]
 )
 test_env = FrameStack(PacmanGym(), stacked_frames)
 
 # If evaluating, just run the eval env
 if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
-    test_env = FrameStack(PacmanGym(render_mode="human", random_start=False), stacked_frames)
+    test_env = FrameStack(
+        PacmanGym(render_mode="human", random_start=False), stacked_frames
+    )
     q_net = torch.load("temp/QNet.pt")
     obs_shape = test_env.observation_space.shape
     if not obs_shape:
@@ -234,11 +245,15 @@ for step in tqdm(range(iterations), position=0):
             q_opt.zero_grad()
             with torch.no_grad():
                 next_actions = (
-                    torch.where(next_masks == 1, -INF, q_net(states)).argmax(1).squeeze(0)
+                    torch.where(next_masks == 1, -INF, q_net(states))
+                    .argmax(1)
+                    .squeeze(0)
                 )
-                q_target = rewards.unsqueeze(1) + discount * q_net_target(states).detach().gather(
-                    1, next_actions.unsqueeze(1)
-                ) * (1.0 - dones.unsqueeze(1))
+                q_target = rewards.unsqueeze(1) + discount * q_net_target(
+                    states
+                ).detach().gather(1, next_actions.unsqueeze(1)) * (
+                    1.0 - dones.unsqueeze(1)
+                )
             diff = q_net(prev_states).gather(1, actions.unsqueeze(1)) - q_target
             q_loss = (diff * diff).mean()
             q_loss.backward()
