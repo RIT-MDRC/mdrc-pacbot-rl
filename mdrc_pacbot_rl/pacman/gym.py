@@ -411,7 +411,11 @@ class SemanticChannelPacmanGym(BasePacmanGym):
         state = np.zeros([3] + list(grid.shape))
         for i, pos in enumerate(entity_positions):
             ghost[i][pos[0]][pos[1]] = 1
-            state[self.game_state.state() - 1][pos[0]][pos[1]] = 1 if i != 3 else self.game_state.frightened_counter() / variables.frightened_length
+            state[self.game_state.state() - 1][pos[0]][pos[1]] = (
+                1
+                if i != 3
+                else self.game_state.frightened_counter() / variables.frightened_length
+            )
 
         last_ghost = np.zeros(ghost.shape)
         for i, pos in enumerate(self.last_ghost_pos):
@@ -430,8 +434,9 @@ class SemanticChannelPacmanGym(BasePacmanGym):
         pacman[0][self.last_pos[0]][self.last_pos[1]] = 1
         pacman[1][pac_pos[0]][pac_pos[1]] = 1
 
-        return np.concatenate([np.stack([wall, reward]), pacman, ghost, last_ghost, state], 0)
-
+        return np.concatenate(
+            [np.stack([wall, reward]), pacman, ghost, last_ghost, state], 0
+        )
 
 
 class SemanticPacmanGym(BasePacmanGym):

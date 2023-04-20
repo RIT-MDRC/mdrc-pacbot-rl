@@ -17,19 +17,15 @@ import torch.nn as nn
 import wandb
 from gymnasium.spaces.discrete import Discrete
 from gymnasium.vector.sync_vector_env import SyncVectorEnv
-from gymnasium.wrappers.time_limit import TimeLimit
 from gymnasium.wrappers.frame_stack import FrameStack
+from gymnasium.wrappers.time_limit import TimeLimit
 from torch.distributions import Categorical
 from tqdm import tqdm
 
 from mdrc_pacbot_rl.algorithms.ppo import train_ppo
 from mdrc_pacbot_rl.algorithms.replay_buffer import ReplayBuffer
 from mdrc_pacbot_rl.pacman.gym import SemanticChannelPacmanGym as PacmanGym
-from mdrc_pacbot_rl.utils import (
-    copy_params,
-    get_img_size,
-    init_orthogonal,
-)
+from mdrc_pacbot_rl.utils import copy_params, get_img_size, init_orthogonal
 
 _: Any
 INF = 10**8
@@ -104,7 +100,9 @@ class QNet(nn.Module):
 stacked_frames = 1
 env = SyncVectorEnv(
     [
-        lambda: FrameStack(TimeLimit(PacmanGym(random_start=True), 1000), stacked_frames)
+        lambda: FrameStack(
+            TimeLimit(PacmanGym(random_start=True), 1000), stacked_frames
+        )
         for _ in range(num_envs)
     ]
 )
@@ -168,7 +166,7 @@ obs_size = torch.Size(obs_shape)
 act_space = env.envs[0].action_space
 if not isinstance(act_space, Discrete):
     raise RuntimeError("Action space was not discrete")
-q_net = torch.load("temp/QNet.pt")#QNet(obs_size, int(act_space.n))
+q_net = torch.load("temp/QNet.pt")  # QNet(obs_size, int(act_space.n))
 q_net_target = copy.deepcopy(q_net)
 q_net_target.to(device)
 q_opt = torch.optim.Adam(q_net.parameters(), lr=q_lr)
