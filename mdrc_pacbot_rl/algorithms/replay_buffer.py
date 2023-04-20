@@ -6,6 +6,7 @@ from typing import List, Optional, Tuple
 import torch
 from torch import nn
 
+
 class ReplayBuffer:
     """
     Stores transitions and generates mini batches.
