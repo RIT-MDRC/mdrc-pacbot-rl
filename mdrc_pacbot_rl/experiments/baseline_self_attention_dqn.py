@@ -229,6 +229,7 @@ q_net_target.to(device)
 q_opt = torch.optim.Adam(q_net.parameters(), lr=q_lr)
 buffer = ReplayBuffer(
     torch.Size(obs_size),
+    torch.Size((int(act_space.n),)),
     10000,
 )
 
@@ -255,6 +256,8 @@ for step in tqdm(range(iterations), position=0):
                 torch.from_numpy(actions_).squeeze(0),
                 rewards,
                 dones,
+                None,
+                None,
             )
             obs = next_obs
 
@@ -267,7 +270,7 @@ for step in tqdm(range(iterations), position=0):
 
         total_q_loss = 0.0
         for _ in tqdm(range(train_iters), position=1):
-            prev_states, states, actions, rewards, dones = buffer.sample(
+            prev_states, states, actions, rewards, dones, _, _ = buffer.sample(
                 train_batch_size
             )
 
