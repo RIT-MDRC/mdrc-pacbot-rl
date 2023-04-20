@@ -2,13 +2,17 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use rand::seq::SliceRandom;
+use tch::IndexOp;
 
-use crate::grid::{self, coords_to_node, NODE_COORDS, VALID_ACTIONS};
+use crate::{
+    grid::{self, coords_to_node, NODE_COORDS, VALID_ACTIONS},
+    variables,
+};
 
 use super::GameState;
 
 /// How many ticks the game should move every step. Ghosts move every 12 ticks.
-const TICKS_PER_STEP: u32 = 12;
+const TICKS_PER_STEP: u32 = 8;
 
 /// Whether to randomize the ghosts' positions when `random_start = true`.
 const RANDOMIZE_GHOSTS: bool = true;
@@ -44,16 +48,28 @@ pub struct PacmanGym {
     #[pyo3(get, set)]
     pub random_start: bool,
     last_score: u32,
+    last_action: Action,
+    last_ghost_pos: Vec<(usize, usize)>,
+    last_pos: (usize, usize),
 }
 
 #[pymethods]
 impl PacmanGym {
     #[new]
     pub fn new(random_start: bool) -> Self {
+        let game_state = GameState::new();
         let mut env = Self {
-            game_state: GameState::new(),
             random_start,
             last_score: 0,
+            last_action: Action::Stay,
+            last_ghost_pos: vec![
+                game_state.red.borrow().current_pos,
+                game_state.pink.borrow().current_pos,
+                game_state.orange.borrow().current_pos,
+                game_state.blue.borrow().current_pos,
+            ],
+            last_pos: game_state.pacbot.pos,
+            game_state: game_state.clone(),
         };
         if random_start && RANDOMIZE_GHOSTS {
             for mut ghost in env.game_state.ghosts_mut() {
@@ -91,18 +107,28 @@ impl PacmanGym {
         self.move_one_cell(action);
 
         // step through environment multiple times
-        for _ in 0..TICKS_PER_STEP {
+        // If changing directions, double the number of ticks
+        let tick_mult = if self.last_action == action || self.last_action == Action::Stay {
+            1
+        } else {
+            2
+        };
+        self.last_action = action;
+        for _ in 0..(TICKS_PER_STEP * tick_mult) {
             self.game_state.next_step();
         }
 
         let done = self.is_done();
 
         // reward is raw difference in game score, or -100 if eaten
-        let reward = if done {
+        let mut reward = if done {
             -100
         } else {
             self.game_state.score as i32 - self.last_score as i32
         };
+        if tick_mult == 2 {
+            reward -= 10;
+        }
         self.last_score = self.game_state.score;
 
         (reward, done)
@@ -139,5 +165,99 @@ impl PacmanGym {
         if grid::is_walkable(new_pos) {
             self.game_state.pacbot.update(new_pos);
         }
+    }
+
+    /// Returns an observation for the value network.
+    pub fn obs(&self) -> tch::Tensor {
+        let grid_vec: Vec<u8> = self
+            .game_state
+            .grid
+            .iter()
+            .flatten()
+            .map(|cell| *cell as u8)
+            .collect();
+        let grid_width = 28;
+        let grid_height = 31;
+        let grid = tch::Tensor::of_slice(&grid_vec).reshape(&[grid_width, grid_height]);
+        let wall_vec: Vec<u8> = grid_vec
+            .iter()
+            .map(|&cell| (cell == 1 || cell == 5) as u8)
+            .collect();
+        let wall = tch::Tensor::of_slice(&wall_vec).reshape(&[grid_width, grid_height]);
+
+        let fright = self.game_state.is_frightened();
+        let entity_positions = [
+            self.game_state.red.borrow().current_pos,
+            self.game_state.pink.borrow().current_pos,
+            self.game_state.orange.borrow().current_pos,
+            self.game_state.blue.borrow().current_pos,
+        ];
+        let ghost = tch::Tensor::zeros(
+            &[4, grid_width, grid_height],
+            (tch::Kind::Int, tch::Device::Cpu),
+        );
+        let state = tch::Tensor::zeros(
+            &[3, grid_width, grid_height],
+            (tch::Kind::Float, tch::Device::Cpu),
+        );
+        for (i, pos) in entity_positions.iter().enumerate() {
+            ghost.i((i as i64, pos.0 as i64, pos.1 as i64)).fill_(1);
+            state
+                .i((
+                    (self.game_state.state() as u8 - 1) as i64,
+                    pos.0 as i64,
+                    pos.1 as i64,
+                ))
+                .fill_(1.0);
+            if i != 3 {
+                state
+                    .i((
+                        (self.game_state.state() as u8 - 1) as i64,
+                        pos.0 as i64,
+                        pos.1 as i64,
+                    ))
+                    .fill_(
+                        self.game_state.frightened_counter() as f64
+                            / variables::FRIGHTENED_LENGTH as f64,
+                    );
+            }
+        }
+
+        let last_ghost = tch::Tensor::zeros(&ghost.size(), (tch::Kind::Int, tch::Device::Cpu));
+        for (i, pos) in self.last_ghost_pos.iter().enumerate() {
+            last_ghost
+                .i((i as i64, pos.0 as i64, pos.1 as i64))
+                .fill_(1);
+        }
+
+        let fright_ghost = ghost.threshold(0, 1).sum(tch::Kind::Int) * fright as i64;
+        let reward_vec: Vec<f32> = grid_vec.iter().map(|cell| match cell {
+            2 => variables::PELLET_SCORE,
+            6 => variables::CHERRY_SCORE,
+            4 => variables::POWER_PELLET_SCORE,
+            _ => 0
+        } as f32 / variables::GHOST_SCORE as f32).collect();
+        let reward =
+            tch::Tensor::of_slice(&reward_vec).reshape(&[grid_width, grid_height]) + fright_ghost;
+
+        let pac_pos = self.game_state.pacbot.pos;
+        let pacman = tch::Tensor::zeros(
+            &[2, grid_width, grid_height],
+            (tch::Kind::Int, tch::Device::Cpu),
+        );
+        pacman
+            .i((0, self.last_pos.0 as i64, self.last_pos.1 as i64))
+            .fill_(1);
+        pacman.i((1, pac_pos.0 as i64, pac_pos.1 as i64)).fill_(1);
+        tch::Tensor::concat(
+            &[
+                tch::Tensor::stack(&[wall, reward], 0),
+                pacman,
+                ghost,
+                last_ghost,
+                state,
+            ],
+            0,
+        )
     }
 }

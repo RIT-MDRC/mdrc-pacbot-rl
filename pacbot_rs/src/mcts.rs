@@ -1,8 +1,9 @@
 use num_enum::TryFromPrimitive;
 use ordered_float::NotNan;
 use pyo3::prelude::*;
+use tch::nn::Module;
 
-use crate::game_state::env::{Action, PacmanGym};
+use crate::{game_state::env::{Action, PacmanGym}, variables};
 
 /// The type for returns (cumulative rewards).
 type Return = f32;
@@ -200,4 +201,19 @@ impl Default for MCTSContext {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Reference function for getting the value of all actions.
+fn eval(env: &PacmanGym, q_net: &tch::CModule) -> f32 {
+    let mask = tch::Tensor::of_slice(&env.action_mask()).to_kind(tch::Kind::Float);
+    (q_net
+        .forward(&env.obs().unsqueeze(0).unsqueeze(0))
+        * &mask
+        + (tch::Tensor::ones(&mask.size(), (tch::Kind::Float, tch::Device::Cpu))
+            - &mask)
+            * -100000
+        )
+        .max()
+        .double_value(&[]) as f32
+        * variables::GHOST_SCORE as f32
 }

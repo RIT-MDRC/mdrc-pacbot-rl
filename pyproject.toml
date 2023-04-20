@@ -8,7 +8,7 @@ packages = [{include = "mdrc_pacbot_rl"}]
 
 [tool.poetry.dependencies]
 python = "^3.9"
-torch = "^1.13.1"
+torch = "^2.0.0"
 pygame = "^2.1.3"
 numpy = "~1.23.0"
 matplotlib = "^3.7.0"

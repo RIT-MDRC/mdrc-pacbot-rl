@@ -3,7 +3,7 @@ Baseline for Pacman gym, using DQN.
 
 CLI Args:
     --eval: Run the last saved policy in the test environment, with visualization.
-    --resume: Resume training from the last saved policy.
+    --export: Exports model for Rust.
 """
 import copy
 import json
@@ -138,6 +138,24 @@ if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
                 action_mask = np.array(list(info["action_mask"]))
                 obs = torch.from_numpy(np.array(obs_)).float()
                 q_net = torch.load("temp/QNet.pt")
+    quit()
+
+# If exporting, load checkpoint and export
+if len(sys.argv) >= 2 and sys.argv[1] == "--export":
+    net = torch.load("temp/QNet.pt")
+    obs_shape = env.envs[0].observation_space.shape
+    if not obs_shape:
+        raise RuntimeError("Observation space doesn't have shape")
+    obs_size = torch.Size([1] + list(torch.Size(obs_shape)))
+    fake_input = [torch.rand(obs_size)]
+
+    # Test model runs with fake input
+    net.eval()
+    net(*fake_input)
+
+    # Trace model
+    traced = torch.jit.script(net, fake_input)
+    traced.save("temp/QNet.ptc")
     quit()
 
 wandb.init(
