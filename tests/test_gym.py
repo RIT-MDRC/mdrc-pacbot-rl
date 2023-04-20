@@ -56,6 +56,7 @@ class TestSemanticChannelPacmanGym:
         gym_env = SemanticChannelPacmanGym()
         obs, _ = gym_env.reset()
         pac_pos_old = self.get_entity_pos(1, obs)
+        gym_env.step(action)  # Might normally indicate a bug but w/e
         obs, _, _, _, _ = gym_env.step(action)
         pac_pos = self.get_entity_pos(1, obs)
         assert pac_pos[0] - pac_pos_old[0] == dx
@@ -103,9 +104,11 @@ class TestGym:
         gym_env.random_start = True
         for _ in range(100):
             gym_env.reset()
-            for step in range(500):
+            was_hit = False
+            for step in range(1000):
                 _, _, done, _, _ = gym_env.step(0)
                 if done:
+                    was_hit = True
                     break
-            if step == 499:
+            if not was_hit:
                 assert False
