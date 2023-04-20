@@ -42,7 +42,7 @@ iterations = 100000  # Number of sample/train iterations.
 train_iters = 1  # Number of passes over the samples collected.
 train_batch_size = 512  # Minibatch size while training models.
 discount = 0.999  # Discount factor applied to rewards.
-q_epsilon = 1.0  # Epsilon for epsilon greedy strategy. This gets annealed over time.
+q_epsilon = 0.1  # Epsilon for epsilon greedy strategy. This gets annealed over time.
 eval_steps = 1  # Number of eval runs to average over.
 max_eval_steps = 300  # Max number of steps to take during each eval run.
 q_lr = 0.0001  # Learning rate of the q net.
@@ -105,7 +105,7 @@ class QNet(nn.Module):
 stacked_frames = 1
 env = SyncVectorEnv(
     [
-        lambda: FrameStack(TimeLimit(PacmanGym(random_start=True), 600), stacked_frames)
+        lambda: FrameStack(TimeLimit(PacmanGym(random_start=True), 1000), stacked_frames)
         for _ in range(num_envs)
     ]
 )
@@ -169,7 +169,7 @@ obs_size = torch.Size(obs_shape)
 act_space = env.envs[0].action_space
 if not isinstance(act_space, Discrete):
     raise RuntimeError("Action space was not discrete")
-q_net = QNet(obs_size, int(act_space.n))
+q_net = torch.load("temp/QNet.pt")#QNet(obs_size, int(act_space.n))
 q_net_target = copy.deepcopy(q_net)
 q_net_target.to(device)
 q_opt = torch.optim.Adam(q_net.parameters(), lr=q_lr)
@@ -182,6 +182,8 @@ buffer = ReplayBuffer(
 obs_, info = env.reset()
 obs = torch.from_numpy(obs_)
 action_mask = np.array(list(info["action_mask"]))
+best_eval = 4000
+score_total = 0
 for step in tqdm(range(iterations), position=0):
     percent_done = step / iterations
 
@@ -269,8 +271,8 @@ for step in tqdm(range(iterations), position=0):
         with torch.no_grad():
             # Visualize
             reward_total = 0
-            pred_reward_total = 0
             score_total = 0
+            pred_reward_total = 0
             obs_, info = test_env.reset()
             eval_obs = torch.from_numpy(np.array(obs_)).float()
             eval_action_mask = np.array(list(info["action_mask"]))
@@ -321,6 +323,12 @@ for step in tqdm(range(iterations), position=0):
     # Perform backups
     if (step + 1) % 100 == 0:
         torch.save(q_net, "temp/QNet.pt")
+
+    eval_score = int(score_total / eval_steps)
+    if best_eval < eval_score:
+        print(f"New best score: {eval_score}")
+        torch.save(q_net, "temp/QNetBest.pt")
+        best_eval = eval_score
 
 # Save artifacts
 torch.save(q_net, "temp/QNet.pt")
