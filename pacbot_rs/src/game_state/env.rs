@@ -97,6 +97,15 @@ impl PacmanGym {
             }
         }
 
+        self.last_ghost_pos = vec![
+            self.game_state.red.borrow().current_pos,
+            self.game_state.pink.borrow().current_pos,
+            self.game_state.orange.borrow().current_pos,
+            self.game_state.blue.borrow().current_pos,
+        ];
+        self.last_action = Action::Stay;
+        self.last_pos = self.game_state.pacbot.pos;
+
         self.game_state.unpause();
     }
 
@@ -104,7 +113,15 @@ impl PacmanGym {
     /// Returns (reward, done).
     pub fn step(&mut self, action: Action) -> (i32, bool) {
         // update Pacman pos
+        self.last_pos = self.game_state.pacbot.pos;
         self.move_one_cell(action);
+
+        let entity_positions = [
+            self.game_state.red.borrow().current_pos,
+            self.game_state.pink.borrow().current_pos,
+            self.game_state.orange.borrow().current_pos,
+            self.game_state.blue.borrow().current_pos,
+        ];
 
         // step through environment multiple times
         // If changing directions, double the number of ticks
@@ -113,16 +130,38 @@ impl PacmanGym {
         } else {
             2
         };
-        self.last_action = action;
-        for _ in 0..(TICKS_PER_STEP * tick_mult) {
+        for _ in 0..TICKS_PER_STEP * tick_mult {
             self.game_state.next_step();
+            if self.is_done() {
+                break;
+            }
+        }
+        self.last_action = action;
+
+        // If the ghost positions change, update the last ghost positions
+        let new_entity_positions = [
+            self.game_state.red.borrow().current_pos,
+            self.game_state.pink.borrow().current_pos,
+            self.game_state.orange.borrow().current_pos,
+            self.game_state.blue.borrow().current_pos,
+        ];
+        let pos_changed = entity_positions
+            .iter()
+            .zip(&new_entity_positions)
+            .any(|(e1, e2)| e1 != e2);
+        if pos_changed {
+            self.last_ghost_pos.copy_from_slice(&entity_positions);
         }
 
         let done = self.is_done();
 
         // reward is raw difference in game score, or -100 if eaten
         let mut reward = if done {
-            -100
+            if self.game_state.lives < variables::STARTING_LIVES {
+                -200
+            } else {
+                1000
+            }
         } else {
             self.game_state.score as i32 - self.last_score as i32
         };
@@ -178,7 +217,6 @@ impl PacmanGym {
             .collect();
         let grid_width = 28;
         let grid_height = 31;
-        let grid = tch::Tensor::of_slice(&grid_vec).reshape(&[grid_width, grid_height]);
         let wall_vec: Vec<u8> = grid_vec
             .iter()
             .map(|&cell| (cell == 1 || cell == 5) as u8)
@@ -200,8 +238,15 @@ impl PacmanGym {
             &[3, grid_width, grid_height],
             (tch::Kind::Float, tch::Device::Cpu),
         );
+        let fright_ghost = tch::Tensor::zeros(
+            &[grid_width, grid_height],
+            (tch::Kind::Float, tch::Device::Cpu),
+        );
         for (i, pos) in entity_positions.iter().enumerate() {
             ghost.i((i as i64, pos.0 as i64, pos.1 as i64)).fill_(1);
+            fright_ghost
+                .i((pos.0 as i64, pos.1 as i64))
+                .fill_(fright as i64);
             state
                 .i((
                     (self.game_state.state() as u8 - 1) as i64,
@@ -209,7 +254,7 @@ impl PacmanGym {
                     pos.1 as i64,
                 ))
                 .fill_(1.0);
-            if i != 3 {
+            if i == 3 {
                 state
                     .i((
                         (self.game_state.state() as u8 - 1) as i64,
@@ -230,7 +275,6 @@ impl PacmanGym {
                 .fill_(1);
         }
 
-        let fright_ghost = ghost.threshold(0, 1).sum(tch::Kind::Int) * fright as i64;
         let reward_vec: Vec<f32> = grid_vec.iter().map(|cell| match cell {
             2 => variables::PELLET_SCORE,
             6 => variables::CHERRY_SCORE,

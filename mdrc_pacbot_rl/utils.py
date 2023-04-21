@@ -4,6 +4,7 @@ from typing import Tuple
 import torch
 from torch import nn
 
+
 def get_img_size(old_h: int, old_w: int, conv: torch.nn.Conv2d) -> Tuple[int, int]:
     """
     Returns the size of the image after the convolution is run on it.
@@ -30,6 +31,7 @@ def copy_params(src: nn.Module, dest: nn.Module):
     with torch.no_grad():
         for dest_, src_ in zip(dest.parameters(), src.parameters()):
             dest_.data.copy_(src_.data)
+
 
 def init_orthogonal(src: nn.Module):
     """

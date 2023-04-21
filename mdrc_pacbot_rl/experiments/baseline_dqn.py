@@ -111,9 +111,9 @@ test_env = FrameStack(PacmanGym(), stacked_frames)
 # If evaluating, just run the eval env
 if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
     test_env = FrameStack(
-        PacmanGym(render_mode="human", random_start=False), stacked_frames
+        PacmanGym(random_start=False), stacked_frames
     )
-    q_net = torch.load("temp/QNet.pt")
+    q_net = torch.load("temp/QNetBest.pt")
     obs_shape = test_env.observation_space.shape
     if not obs_shape:
         raise RuntimeError("Observation space doesn't have shape")
@@ -130,7 +130,8 @@ if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
                 .item()
             )
             obs_, reward, done, _, info = test_env.step(action)
-            print(q_vals, reward)
+            # print(q_vals, reward)
+            print("Score:", test_env.score())
             obs = torch.from_numpy(np.array(obs_)).float()
             action_mask = np.array(list(info["action_mask"]))
             if done:
@@ -138,11 +139,11 @@ if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
                 action_mask = np.array(list(info["action_mask"]))
                 obs = torch.from_numpy(np.array(obs_)).float()
                 q_net = torch.load("temp/QNet.pt")
-    quit()
+                quit()
 
 # If exporting, load checkpoint and export
 if len(sys.argv) >= 2 and sys.argv[1] == "--export":
-    net = torch.load("temp/QNet.pt")
+    net = torch.load("temp/QNetBest.pt")
     obs_shape = env.envs[0].observation_space.shape
     if not obs_shape:
         raise RuntimeError("Observation space doesn't have shape")

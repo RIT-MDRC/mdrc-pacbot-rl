@@ -1,15 +1,20 @@
+use std::borrow::Borrow;
+
 use num_enum::TryFromPrimitive;
 use ordered_float::NotNan;
 use pyo3::prelude::*;
 use tch::nn::Module;
 
-use crate::{game_state::env::{Action, PacmanGym}, variables};
+use crate::{
+    game_state::env::{Action, PacmanGym},
+    variables,
+};
 
 /// The type for returns (cumulative rewards).
 type Return = f32;
 
 /// The factor used to discount future rewards each timestep.
-const DISCOUNT_FACTOR: f32 = 1.0;
+const DISCOUNT_FACTOR: f32 = 0.999;
 
 #[derive(Default)]
 struct SearchTreeEdge {
@@ -51,11 +56,17 @@ impl SearchTreeNode {
     /// Mutates the provided environment instance as the tree walk is performed.
     /// Returns the return (cumulative reward; based on the search steps taken and the
     /// leaf evaluation).
-    fn sample_move(
-        &mut self,
-        env: &mut PacmanGym,
-        leaf_evaluator: impl FnOnce(&mut PacmanGym) -> Return,
-    ) -> Return {
+    fn sample_move(&mut self, env: &mut PacmanGym, q_net: &tch::CModule) -> Return {
+        // Optimization: the first time a node is entered, expand all children with Q values
+        if self.visit_count == 0 {
+            let next_vals = eval_actions(env, q_net);
+            for (i, val) in next_vals.iter().enumerate() {
+                self.children[i].child = Some(Default::default());
+                self.children[i].visit_count = 1;
+                self.children[i].total_return = *val;
+            }
+        }
+
         // choose a (valid) action based on the current stats
         let action_mask = env.action_mask();
         let (action_index, edge) = self
@@ -72,13 +83,15 @@ impl SearchTreeNode {
         let subsequent_return = if done {
             // this child is a terminal node; the return is therefore zero
             0.0
-        } else if let Some(child) = &mut edge.child {
+        } else if self.visit_count > 0 {
+            // We guarantee edges exist
+            let child = edge.child.as_mut().unwrap();
             // this child has already been expanded; recurse
-            child.sample_move(env, leaf_evaluator)
+            child.sample_move(env, q_net)
         } else {
-            // this child is a leaf node; expand it and evaluate it
-            edge.child = Some(Default::default());
-            leaf_evaluator(env)
+            // Don't expand if this is the first time this node has been visited.
+            // This is to keep it from executing until termination.
+            edge.expected_return().into()
         };
         let this_return = reward as Return + DISCOUNT_FACTOR * subsequent_return;
 
@@ -127,6 +140,7 @@ impl SearchTreeNode {
 #[pyclass]
 pub struct MCTSContext {
     root: SearchTreeNode,
+    q_net: Option<tch::CModule>,
 }
 
 #[pymethods]
@@ -135,6 +149,7 @@ impl MCTSContext {
     pub fn new() -> Self {
         Self {
             root: SearchTreeNode::default(),
+            q_net: Some(tch::CModule::load("temp/QNet.ptc").unwrap()),
         }
     }
 
@@ -145,6 +160,11 @@ impl MCTSContext {
             .take()
             .map(|child_box| *child_box)
             .unwrap_or_default();
+    }
+
+    /// Clears the root.
+    pub fn clear(&mut self) {
+        self.root = SearchTreeNode::default();
     }
 
     /// Returns the action at the root with the highest expected return.
@@ -162,10 +182,13 @@ impl MCTSContext {
     /// Performs MCTS iterations to grow the tree to (approximately) the given size,
     /// then returns the best action.
     pub fn ponder_and_choose(&mut self, env: &PacmanGym, max_tree_size: usize) -> Action {
+        let q_net = self.q_net.take();
+
         let num_iterations = max_tree_size.saturating_sub(self.node_count());
         for _ in 0..num_iterations {
-            self.sample_move(env.clone(), |_env| 0.0);
+            self.sample_move(env.clone(), q_net.as_ref().unwrap());
         }
+        self.q_net = q_net;
         self.best_action(env)
     }
 
@@ -184,15 +207,11 @@ impl MCTSContext {
     /// Samples a move that a player might make from a state, updating the search tree.
     /// Returns the return (cumulative reward; based on the search steps taken and the
     /// leaf evaluation).
-    pub fn sample_move(
-        &mut self,
-        mut env: PacmanGym,
-        leaf_evaluator: impl FnOnce(&mut PacmanGym) -> Return,
-    ) -> Return {
+    pub fn sample_move(&mut self, mut env: PacmanGym, q_net: &tch::CModule) -> Return {
         if env.is_done() {
             0.0
         } else {
-            self.root.sample_move(&mut env, leaf_evaluator)
+            self.root.sample_move(&mut env, q_net)
         }
     }
 }
@@ -203,17 +222,13 @@ impl Default for MCTSContext {
     }
 }
 
-/// Reference function for getting the value of all actions.
-fn eval(env: &PacmanGym, q_net: &tch::CModule) -> f32 {
+/// Returns the value of each next action in this state.
+fn eval_actions(env: &PacmanGym, q_net: &tch::CModule) -> Vec<f32> {
     let mask = tch::Tensor::of_slice(&env.action_mask()).to_kind(tch::Kind::Float);
-    (q_net
-        .forward(&env.obs().unsqueeze(0).unsqueeze(0))
-        * &mask
-        + (tch::Tensor::ones(&mask.size(), (tch::Kind::Float, tch::Device::Cpu))
-            - &mask)
-            * -100000
-        )
-        .max()
-        .double_value(&[]) as f32
-        * variables::GHOST_SCORE as f32
+    ((q_net.forward(&env.obs().unsqueeze(0).unsqueeze(0)) * &mask
+        + (tch::Tensor::ones(&mask.size(), (tch::Kind::Float, tch::Device::Cpu)) - &mask)
+            * -100000)
+        .squeeze()
+        * variables::GHOST_SCORE as f64)
+        .into()
 }
