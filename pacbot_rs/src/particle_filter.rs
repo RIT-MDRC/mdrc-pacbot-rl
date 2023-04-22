@@ -1,4 +1,4 @@
-use crate::grid::{is_walkable, GRID, NODE_COORDS, NUM_NODES};
+use crate::grid::{is_walkable, NODE_COORDS, NUM_NODES};
 use crate::variables::{INNER_CELL_WIDTH, ROBOT_WIDTH};
 use pyo3::prelude::*;
 use rand::distributions::Uniform;
@@ -33,13 +33,9 @@ impl HorizontalSegment {
         }
 
         let distance = (self.y - y0) / vy;
-        return if distance < 0.0
-            || (!(self.x_min <= x0 + vx * distance && x0 + vx * distance <= self.x_max))
-        {
-            None
-        } else {
-            Some(distance)
-        };
+        let hit_x = x0 + vx * distance;
+        let is_hit = distance >= 0.0 && (self.x_min <= hit_x && hit_x <= self.x_max);
+        is_hit.then_some(distance)
     }
 }
 
@@ -56,13 +52,9 @@ impl VerticalSegment {
         }
 
         let distance = (self.x - x0) / vx;
-        return if distance < 0.0
-            || (!(self.y_min <= y0 + vy * distance && y0 + vy * distance <= self.y_max))
-        {
-            None
-        } else {
-            Some(distance)
-        };
+        let hit_y = y0 + vy * distance;
+        let is_hit = distance >= 0.0 && (self.y_min <= hit_y && hit_y <= self.y_max);
+        is_hit.then_some(distance)
     }
 }
 
@@ -203,16 +195,13 @@ impl ParticleFilter {
         self.update_cell_sort();
 
         // update best guess sense distances based on raycast values
-        for i in 0..5 {
-            self.sense_distances[i] = self.raycast(self.pacbot_pose.pos, SENSOR_ANGLES[i]);
-        }
+        self.sense_distances = SENSOR_ANGLES.map(|angle| self.raycast(self.pacbot_pose.pos, angle));
 
         // replace the worst half of the points with random points around the best points
         for i in PARTICLE_FILTER_POINTS / 2..PARTICLE_FILTER_POINTS {
             // choose a random index from 0 to PARTICLE_FILTER_POINTS, weighing lower values more
             let index_range = Uniform::new(0.0, 1.0);
-            let mut index_f: f64 =
-                1.0 - (index_range.sample(&mut rand::thread_rng()) as f64).sqrt();
+            let mut index_f: f64 = 1.0 - f64::sqrt(index_range.sample(&mut rand::thread_rng()));
             index_f *= PARTICLE_FILTER_POINTS as f64 / 2.0;
             let mut index = index_f as usize;
             if index >= PARTICLE_FILTER_POINTS {
@@ -277,10 +266,10 @@ impl ParticleFilter {
             let mut seg_start_x: Option<usize> = None;
             for x in 0..grid_width {
                 let is_wall_here = is_walkable((x, y)) != is_walkable((x, y + 1));
-                if is_wall_here && seg_start_x == None {
+                if is_wall_here && seg_start_x.is_none() {
                     seg_start_x = Some(x - 1);
                 }
-                if !is_wall_here && seg_start_x != None {
+                if !is_wall_here && seg_start_x.is_some() {
                     horizontal_segments.push(HorizontalSegment {
                         x_min: seg_start_x.unwrap() as f64,
                         x_max: (x - 1) as f64,
@@ -295,10 +284,10 @@ impl ParticleFilter {
             let mut seg_start_y: Option<usize> = None;
             for y in 0..grid_height {
                 let is_wall_here = is_walkable((x, y)) != is_walkable((x + 1, y));
-                if is_wall_here && seg_start_y == None {
+                if is_wall_here && seg_start_y.is_none() {
                     seg_start_y = Some(y - 1);
                 }
-                if !is_wall_here && seg_start_y != None {
+                if !is_wall_here && seg_start_y.is_some() {
                     vertical_segments.push(VerticalSegment {
                         x: x as f64,
                         y_min: seg_start_y.unwrap() as f64,
@@ -321,9 +310,9 @@ impl ParticleFilter {
         let mut rng = rand::thread_rng();
         let normal = Normal::new(0.0, 10.0).unwrap();
         let random_value = rng.sample::<f64, _>(normal).abs();
-        let index = random_value.round() as usize;
+        let index = (random_value.round() as usize).min(self.empty_grid_cells.len() - 1);
 
-        let pos = self.empty_grid_cells[index].clone();
+        let pos = self.empty_grid_cells[index];
 
         let extra_space_per_side = (INNER_CELL_WIDTH - ROBOT_WIDTH) / 2.0;
 
@@ -368,6 +357,7 @@ impl ParticleFilter {
     }
 }
 
+#[cfg(test)]
 mod test {
     use super::*;
 
@@ -393,7 +383,7 @@ mod test {
             segment
                 .raycast(0.0, 0.5, pi_over4.cos(), pi_over4.sin())
                 .unwrap(),
-            (2.0 as f64).sqrt() / 2.0,
+            std::f64::consts::SQRT_2 / 2.0,
         );
 
         pi_over4 *= 3.0;
@@ -413,7 +403,7 @@ mod test {
             segment
                 .raycast(0.0, -0.5, pi_over4.cos(), pi_over4.sin())
                 .unwrap(),
-            (2.0 as f64).sqrt() / 2.0,
+            std::f64::consts::SQRT_2 / 2.0,
         );
 
         pi_over4 *= 3.0;
@@ -441,7 +431,7 @@ mod test {
             segment
                 .raycast(0.5, 0.0, pi_over4.cos(), pi_over4.sin())
                 .unwrap(),
-            (2.0 as f64).sqrt() / 2.0,
+            std::f64::consts::SQRT_2 / 2.0,
         );
 
         pi_over4 = pi_over4 / 3.0 * 5.0;
@@ -461,10 +451,10 @@ mod test {
             segment
                 .raycast(-0.5, 0.0, pi_over4.cos(), pi_over4.sin())
                 .unwrap(),
-            (2.0 as f64).sqrt() / 2.0,
+            std::f64::consts::SQRT_2 / 2.0,
         );
 
-        pi_over4 = pi_over4 * 3.0;
+        pi_over4 *= 3.0;
         assert_eq!(
             segment.raycast(-0.5, 0.0, pi_over4.cos(), pi_over4.sin()),
             None
@@ -505,9 +495,9 @@ mod test {
         assert_close(pos1.dist(&pos2), 1.0);
 
         let pos2 = PfPosition { x: 1.0, y: 1.0 };
-        assert_close(pos1.dist(&pos2), (2.0 as f64).sqrt());
+        assert_close(pos1.dist(&pos2), std::f64::consts::SQRT_2);
 
         let pos2 = PfPosition { x: 2.0, y: 2.0 };
-        assert_close(pos1.dist(&pos2), (8.0 as f64).sqrt());
+        assert_close(pos1.dist(&pos2), f64::sqrt(8.0));
     }
 }
