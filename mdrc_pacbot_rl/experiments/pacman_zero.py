@@ -21,14 +21,13 @@ print("Use net:", use_net)
 mcts = MCTSContext()
 test_env = PacmanGym(False)
 mcts = MCTSContext()
-with torch.no_grad():
-    test_env.reset()
-    done = False
-    while not done:
-        action = mcts.ponder_and_choose(test_env, 50, use_net)
-        act_dist = mcts.action_distribution()
-        reward, done = test_env.step(action)
-        mcts.clear()
-        print("Score:", test_env.score())
-        if done:
-            print("Pellets remaining:", test_env.game_state.pellets)
+test_env.reset()
+done = False
+while not done:
+    action = mcts.ponder_and_choose(test_env, 50, use_net)
+    act_dist = mcts.action_distribution()
+    reward, done = test_env.step(action)
+    mcts.clear()
+    print("Score:", test_env.score())
+    if done:
+        print("Pellets remaining:", test_env.game_state.pellets)
