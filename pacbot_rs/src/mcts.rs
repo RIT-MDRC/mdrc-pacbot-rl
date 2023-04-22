@@ -56,14 +56,16 @@ impl SearchTreeNode {
     /// Mutates the provided environment instance as the tree walk is performed.
     /// Returns the return (cumulative reward; based on the search steps taken and the
     /// leaf evaluation).
-    fn sample_move(&mut self, env: &mut PacmanGym, q_net: &tch::CModule) -> Return {
+    fn sample_move(&mut self, env: &mut PacmanGym, q_net: &tch::CModule, use_net: bool) -> Return {
         // Optimization: the first time a node is entered, expand all children with Q values
         if self.visit_count == 0 {
             let next_vals = eval_actions(env, q_net);
             for (i, val) in next_vals.iter().enumerate() {
                 self.children[i].child = Some(Default::default());
                 self.children[i].visit_count = 1;
-                self.children[i].total_return = *val;
+                if use_net {
+                    self.children[i].total_return = *val;
+                }
             }
         }
 
@@ -87,7 +89,7 @@ impl SearchTreeNode {
             // We guarantee edges exist
             let child = edge.child.as_mut().unwrap();
             // this child has already been expanded; recurse
-            child.sample_move(env, q_net)
+            child.sample_move(env, q_net, use_net)
         } else {
             // Don't expand if this is the first time this node has been visited.
             // This is to keep it from executing until termination.
@@ -181,12 +183,12 @@ impl MCTSContext {
 
     /// Performs MCTS iterations to grow the tree to (approximately) the given size,
     /// then returns the best action.
-    pub fn ponder_and_choose(&mut self, env: &PacmanGym, max_tree_size: usize) -> Action {
+    pub fn ponder_and_choose(&mut self, env: &PacmanGym, max_tree_size: usize, use_net: bool) -> Action {
         let q_net = self.q_net.take();
 
         let num_iterations = max_tree_size.saturating_sub(self.node_count());
         for _ in 0..num_iterations {
-            self.sample_move(env.clone(), q_net.as_ref().unwrap());
+            self.sample_move(env.clone(), q_net.as_ref().unwrap(), use_net);
         }
         self.q_net = q_net;
         self.best_action(env)
@@ -207,11 +209,11 @@ impl MCTSContext {
     /// Samples a move that a player might make from a state, updating the search tree.
     /// Returns the return (cumulative reward; based on the search steps taken and the
     /// leaf evaluation).
-    pub fn sample_move(&mut self, mut env: PacmanGym, q_net: &tch::CModule) -> Return {
+    pub fn sample_move(&mut self, mut env: PacmanGym, q_net: &tch::CModule, use_net: bool) -> Return {
         if env.is_done() {
             0.0
         } else {
-            self.root.sample_move(&mut env, q_net)
+            self.root.sample_move(&mut env, q_net, use_net)
         }
     }
 }

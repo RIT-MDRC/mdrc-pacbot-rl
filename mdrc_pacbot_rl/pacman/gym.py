@@ -263,7 +263,10 @@ class NaivePacmanGym(BasePacmanGym):
         # Reward is raw difference in game score
         reward = (self.game_state.score - self.last_score) / variables.ghost_score
         if done:
-            reward = 0
+            if self.game_state.lives < variables.starting_lives:
+                reward = -1
+            else:
+                reward = 1000 / variables.ghost_score
         if reward == float("Nan"):
             reward = 0
         self.last_score = self.game_state.score

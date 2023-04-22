@@ -37,7 +37,7 @@ iterations = 100000  # Number of sample/train iterations.
 train_iters = 1  # Number of passes over the samples collected.
 train_batch_size = 512  # Minibatch size while training models.
 discount = 0.999  # Discount factor applied to rewards.
-q_epsilon = 0.1  # Epsilon for epsilon greedy strategy. This gets annealed over time.
+q_epsilon = 0.3  # Epsilon for epsilon greedy strategy. This gets annealed over time.
 eval_steps = 1  # Number of eval runs to average over.
 max_eval_steps = 300  # Max number of steps to take during each eval run.
 q_lr = 0.0001  # Learning rate of the q net.
@@ -49,23 +49,19 @@ class BaseNet(nn.Module):
     def __init__(self, obs_shape: torch.Size):
         nn.Module.__init__(self)
         d, c, w, h = obs_shape
-        self.cnn1 = nn.Conv2d(c * d, 16, 3, padding=1)
-        h, w = get_img_size(h, w, self.cnn1)
-        self.cnn2 = nn.Conv2d(16, 32, 3, padding=1)
-        h, w = get_img_size(h, w, self.cnn2)
-        self.cnn3 = nn.Conv2d(32, 64, 3, padding=1)
-        h, w = get_img_size(h, w, self.cnn3)
+        self.net = nn.Sequential(
+            nn.Conv2d(c * d, 16, 3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(16, 32, 3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, 3, padding=1),
+        )
         self.flat_dim = 64
-        self.relu = nn.ReLU()
         init_orthogonal(self)
 
     def forward(self, input: torch.Tensor):
         input = input.flatten(1, 2)
-        x = self.cnn1(input)
-        x = self.relu(x)
-        x = self.cnn2(x)
-        x = self.relu(x)
-        x = self.cnn3(x)
+        x = self.net(input)
         x = x.max(3).values.max(2).values
         return x
 
@@ -110,10 +106,8 @@ test_env = FrameStack(PacmanGym(), stacked_frames)
 
 # If evaluating, just run the eval env
 if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
-    test_env = FrameStack(
-        PacmanGym(random_start=False), stacked_frames
-    )
-    q_net = torch.load("temp/QNetBest.pt")
+    test_env = FrameStack(PacmanGym(random_start=False), stacked_frames)
+    q_net = torch.load("temp/QNet.pt")
     obs_shape = test_env.observation_space.shape
     if not obs_shape:
         raise RuntimeError("Observation space doesn't have shape")
@@ -135,6 +129,7 @@ if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
             obs = torch.from_numpy(np.array(obs_)).float()
             action_mask = np.array(list(info["action_mask"]))
             if done:
+                print("Pellets remaining:", test_env.game_state.pellets)
                 obs_, info = test_env.reset()
                 action_mask = np.array(list(info["action_mask"]))
                 obs = torch.from_numpy(np.array(obs_)).float()
@@ -143,7 +138,7 @@ if len(sys.argv) >= 2 and sys.argv[1] == "--eval":
 
 # If exporting, load checkpoint and export
 if len(sys.argv) >= 2 and sys.argv[1] == "--export":
-    net = torch.load("temp/QNetBest.pt")
+    net = torch.load("temp/QNet.pt")
     obs_shape = env.envs[0].observation_space.shape
     if not obs_shape:
         raise RuntimeError("Observation space doesn't have shape")
@@ -185,7 +180,11 @@ obs_size = torch.Size(obs_shape)
 act_space = env.envs[0].action_space
 if not isinstance(act_space, Discrete):
     raise RuntimeError("Action space was not discrete")
-q_net = torch.load("temp/QNet.pt")  # QNet(obs_size, int(act_space.n))
+resume = True
+if resume:
+    q_net = torch.load("temp/QNet.pt")
+else:
+    q_net = QNet(obs_size, int(act_space.n))
 q_net_target = copy.deepcopy(q_net)
 q_net_target.to(device)
 q_opt = torch.optim.Adam(q_net.parameters(), lr=q_lr)
@@ -343,7 +342,7 @@ for step in tqdm(range(iterations), position=0):
     eval_score = int(score_total / eval_steps)
     if best_eval < eval_score:
         print(f"New best score: {eval_score}")
-        torch.save(q_net, "temp/QNetBest.pt")
+        torch.save(q_net, "temp/QNet.pt")
         best_eval = eval_score
 
 # Save artifacts
