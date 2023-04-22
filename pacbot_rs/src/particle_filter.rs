@@ -262,10 +262,10 @@ impl ParticleFilter {
         #[allow(clippy::needless_range_loop)]
         for x in 1..=GRID_WIDTH - 1 {
             for y in 1..=GRID_HEIGHT - 1 {
-                alt_grid[x][y] = is_walkable((x - 1, y - 1))
-                    && is_walkable((x, y - 1))
-                    && is_walkable((x - 1, y))
-                    && is_walkable((x, y));
+                alt_grid[x][y] = !is_walkable((x - 1, y - 1))
+                    && !is_walkable((x, y - 1))
+                    && !is_walkable((x - 1, y))
+                    && !is_walkable((x, y));
             }
         }
 
