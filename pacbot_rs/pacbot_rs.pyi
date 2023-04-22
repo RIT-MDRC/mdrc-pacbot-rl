@@ -88,3 +88,7 @@ def get_heuristic_value(
 def get_action_heuristic_values(
     game_state: GameState,
 ) -> tuple[list[Optional[float]], int]: ...
+def get_heuristic_path(
+    game_state: GameState,
+    max_path_len: Optional[int],
+) -> list[tuple[int, int]]: ...

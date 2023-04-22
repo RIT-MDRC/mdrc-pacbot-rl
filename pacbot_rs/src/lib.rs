@@ -54,5 +54,6 @@ fn pacbot_rs(_py: Python, m: &PyModule) -> PyResult<()> {
         heuristic_values::get_action_heuristic_values,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(heuristic_values::get_heuristic_path, m)?)?;
     Ok(())
 }

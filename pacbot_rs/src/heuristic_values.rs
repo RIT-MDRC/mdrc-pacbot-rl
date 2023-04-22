@@ -116,3 +116,54 @@ pub fn get_action_heuristic_values(game_state: &GameState) -> ([Option<f32>; 5],
 
     (values, best_action.try_into().unwrap())
 }
+
+/// Computes a path from pacbot's current location, following the local heuristic
+/// gradient towards a local minimum.
+#[pyfunction]
+pub fn get_heuristic_path(
+    game_state: &GameState,
+    max_path_len: Option<usize>,
+) -> Vec<(usize, usize)> {
+    let (mut x, mut y) = game_state.pacbot.pos;
+    let mut last_action = None;
+
+    let mut path = vec![(x, y)];
+
+    loop {
+        // check if we've reached the max_path_len
+        if let Some(max_path_len) = max_path_len {
+            if path.len() == max_path_len {
+                break;
+            }
+        }
+
+        // get the next point that has the best (lowest) heuristic value
+        let next_points = [(x, y), (x, y + 1), (x, y - 1), (x - 1, y), (x + 1, y)];
+        let values = next_points
+            .iter()
+            .map(|&pos| get_heuristic_value(game_state, pos));
+        let (next_action, _, best_next_point) = values
+            .enumerate()
+            .zip(next_points)
+            .filter_map(|((i, value), pos)| value.map(|v| (i, v, pos)))
+            .min_by_key(|&(_, value, _)| NotNan::new(value).unwrap())
+            .expect("at least one action should be valid");
+
+        // stop if we're at a local minimum; otherwise update the path and continue
+        if best_next_point == (x, y) {
+            break;
+        } else {
+            // add the current position to the path, replacing the last point if it's collinear
+            if last_action == Some(next_action) {
+                *path.last_mut().unwrap() = best_next_point;
+            } else {
+                path.push(best_next_point);
+            }
+
+            (x, y) = best_next_point;
+            last_action = Some(next_action);
+        }
+    }
+
+    path
+}
