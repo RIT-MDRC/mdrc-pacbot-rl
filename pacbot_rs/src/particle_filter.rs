@@ -93,6 +93,10 @@ pub struct ParticleFilter {
 
 #[pymethods]
 impl ParticleFilter {
+    pub fn get_pose(&self) -> ((f64, f64), f64) {
+        ((self.pacbot_pose.pos.x, self.pacbot_pose.pos.y), self.pacbot_pose.angle)
+    }
+
     pub fn get_points(&self) -> Vec<((f64, f64), f64)> {
         self.points.iter().map(|p| ((p.pos.x, p.pos.y), p.angle)).collect()
     }
