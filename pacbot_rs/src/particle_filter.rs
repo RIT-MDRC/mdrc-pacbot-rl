@@ -1,20 +1,22 @@
+use crate::grid::{is_walkable, GRID, NODE_COORDS, NUM_NODES};
+use crate::variables::{INNER_CELL_WIDTH, ROBOT_WIDTH};
+use pyo3::prelude::*;
 use rand::distributions::Uniform;
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
-use crate::grid::{GRID, is_walkable, NODE_COORDS, NUM_NODES};
-use crate::variables::{INNER_CELL_WIDTH, ROBOT_WIDTH};
-use pyo3::prelude::*;
 
 use ordered_float::NotNan;
 
 const PARTICLE_FILTER_POINTS: usize = 1000;
 const EPSILON: f64 = 0.0000001;
 
-const SENSOR_ANGLES: [f64; 5] = [0.0,
+const SENSOR_ANGLES: [f64; 5] = [
+    0.0,
     (1.0 / 8.0) * std::f64::consts::PI,
     (1.0 / 4.0) * std::f64::consts::PI,
     (-1.0 / 8.0) * std::f64::consts::PI,
-    (-1.0 / 4.0) * std::f64::consts::PI];
+    (-1.0 / 4.0) * std::f64::consts::PI,
+];
 
 const SENSOR_DISTANCE_FROM_CENTER: f64 = 0.75 / 2.0;
 
@@ -31,7 +33,9 @@ impl HorizontalSegment {
         }
 
         let distance = (self.y - y0) / vy;
-        return if distance < 0.0 || (!(self.x_min <= x0 + vx * distance && x0 + vx * distance <= self.x_max)) {
+        return if distance < 0.0
+            || (!(self.x_min <= x0 + vx * distance && x0 + vx * distance <= self.x_max))
+        {
             None
         } else {
             Some(distance)
@@ -52,7 +56,9 @@ impl VerticalSegment {
         }
 
         let distance = (self.x - x0) / vx;
-        return if distance < 0.0 || (!(self.y_min <= y0 + vy * distance && y0 + vy * distance <= self.y_max)) {
+        return if distance < 0.0
+            || (!(self.y_min <= y0 + vy * distance && y0 + vy * distance <= self.y_max))
+        {
             None
         } else {
             Some(distance)
@@ -95,11 +101,17 @@ pub struct ParticleFilter {
 #[pymethods]
 impl ParticleFilter {
     pub fn get_pose(&self) -> ((f64, f64), f64) {
-        ((self.pacbot_pose.pos.x, self.pacbot_pose.pos.y), self.pacbot_pose.angle)
+        (
+            (self.pacbot_pose.pos.x, self.pacbot_pose.pos.y),
+            self.pacbot_pose.angle,
+        )
     }
 
     pub fn get_points(&self) -> Vec<((f64, f64), f64)> {
-        self.points.iter().map(|p| ((p.pos.x, p.pos.y), p.angle)).collect()
+        self.points
+            .iter()
+            .map(|p| ((p.pos.x, p.pos.y), p.angle))
+            .collect()
     }
 
     pub fn get_empty_grid_cells(&self) -> Vec<(f64, f64)> {
@@ -160,21 +172,30 @@ impl ParticleFilter {
         pf
     }
 
-    pub fn update(&mut self, magnitude: f64, direction: f64, sensors: [f64; 5]) -> ((f64, f64), f64) {
+    pub fn update(
+        &mut self,
+        magnitude: f64,
+        direction: f64,
+        sensors: [f64; 5],
+    ) -> ((f64, f64), f64) {
         for point in self.points.iter_mut() {
             point.pos.update_by(magnitude, direction);
             point.angle += direction;
         }
 
         // sort points by accuracy based on sensors
-        let mut point_accuracies: Vec<(&PfPose, f64)> = self.points
+        let mut point_accuracies: Vec<(&PfPose, f64)> = self
+            .points
             .iter()
             .map(|point| (point, self.get_point_error(point, sensors)))
             .collect();
 
         point_accuracies.sort_unstable_by_key(|(_, accuracy)| NotNan::new(*accuracy).unwrap());
 
-        let sorted_points: Vec<PfPose> = point_accuracies.into_iter().map(|(point, _)| *point).collect();
+        let sorted_points: Vec<PfPose> = point_accuracies
+            .into_iter()
+            .map(|(point, _)| *point)
+            .collect();
         self.points.copy_from_slice(&sorted_points);
 
         // find the best guess position
@@ -190,7 +211,8 @@ impl ParticleFilter {
         for i in PARTICLE_FILTER_POINTS / 2..PARTICLE_FILTER_POINTS {
             // choose a random index from 0 to PARTICLE_FILTER_POINTS, weighing lower values more
             let index_range = Uniform::new(0.0, 1.0);
-            let mut index_f: f64 = 1.0 - (index_range.sample(&mut rand::thread_rng()) as f64).sqrt();
+            let mut index_f: f64 =
+                1.0 - (index_range.sample(&mut rand::thread_rng()) as f64).sqrt();
             index_f *= PARTICLE_FILTER_POINTS as f64 / 2.0;
             let mut index = index_f as usize;
             if index >= PARTICLE_FILTER_POINTS {
@@ -219,7 +241,10 @@ impl ParticleFilter {
         }
 
         // return the best guess position
-        ((self.pacbot_pose.pos.x, self.pacbot_pose.pos.y), self.pacbot_pose.angle)
+        (
+            (self.pacbot_pose.pos.x, self.pacbot_pose.pos.y),
+            self.pacbot_pose.angle,
+        )
     }
 }
 
@@ -233,7 +258,6 @@ impl ParticleFilter {
             let sensor_distance = sensors[i];
 
             let diff = (distance - sensor_distance).abs();
-
 
             error += diff;
         }
@@ -289,7 +313,8 @@ impl ParticleFilter {
     }
 
     fn update_cell_sort(&mut self) {
-        self.empty_grid_cells.sort_by_key(|a| NotNan::new(a.dist(&self.pacbot_pose.pos)).unwrap());
+        self.empty_grid_cells
+            .sort_by_key(|a| NotNan::new(a.dist(&self.pacbot_pose.pos)).unwrap());
     }
 
     fn random_point(&self) -> PfPose {
@@ -364,11 +389,18 @@ mod test {
         assert_eq!(segment.raycast(0.5, 0.5, -1.0, 0.0), None);
 
         let mut pi_over4 = -std::f64::consts::PI / 4.0;
-        assert_close(segment.raycast(0.0, 0.5, pi_over4.cos(), pi_over4.sin()).unwrap(),
-                     (2.0 as f64).sqrt() / 2.0);
+        assert_close(
+            segment
+                .raycast(0.0, 0.5, pi_over4.cos(), pi_over4.sin())
+                .unwrap(),
+            (2.0 as f64).sqrt() / 2.0,
+        );
 
         pi_over4 *= 3.0;
-        assert_eq!(segment.raycast(0.0, 0.5, pi_over4.cos(), pi_over4.sin()), None);
+        assert_eq!(
+            segment.raycast(0.0, 0.5, pi_over4.cos(), pi_over4.sin()),
+            None
+        );
 
         // from underneath
         assert_eq!(segment.raycast(0.5, -0.5, 0.0, 1.0), Some(0.5));
@@ -377,11 +409,18 @@ mod test {
         assert_eq!(segment.raycast(0.5, -0.5, -1.0, 0.0), None);
 
         pi_over4 = std::f64::consts::PI / 4.0;
-        assert_close(segment.raycast(0.0, -0.5, pi_over4.cos(), pi_over4.sin()).unwrap(),
-                     (2.0 as f64).sqrt() / 2.0);
+        assert_close(
+            segment
+                .raycast(0.0, -0.5, pi_over4.cos(), pi_over4.sin())
+                .unwrap(),
+            (2.0 as f64).sqrt() / 2.0,
+        );
 
         pi_over4 *= 3.0;
-        assert_eq!(segment.raycast(0.0, -0.5, pi_over4.cos(), pi_over4.sin()), None);
+        assert_eq!(
+            segment.raycast(0.0, -0.5, pi_over4.cos(), pi_over4.sin()),
+            None
+        );
     }
 
     #[test]
@@ -398,11 +437,18 @@ mod test {
         assert_eq!(segment.raycast(0.5, 0.5, 0.0, -1.0), None);
 
         let mut pi_over4 = std::f64::consts::PI * 3.0 / 4.0;
-        assert_close(segment.raycast(0.5, 0.0, pi_over4.cos(), pi_over4.sin()).unwrap(),
-                     (2.0 as f64).sqrt() / 2.0);
+        assert_close(
+            segment
+                .raycast(0.5, 0.0, pi_over4.cos(), pi_over4.sin())
+                .unwrap(),
+            (2.0 as f64).sqrt() / 2.0,
+        );
 
         pi_over4 = pi_over4 / 3.0 * 5.0;
-        assert_eq!(segment.raycast(0.5, 0.0, pi_over4.cos(), pi_over4.sin()), None);
+        assert_eq!(
+            segment.raycast(0.5, 0.0, pi_over4.cos(), pi_over4.sin()),
+            None
+        );
 
         // from the left
         assert_eq!(segment.raycast(-0.5, 0.5, 1.0, 0.0), Some(0.5));
@@ -411,11 +457,18 @@ mod test {
         assert_eq!(segment.raycast(-0.5, 0.5, 0.0, -1.0), None);
 
         pi_over4 = std::f64::consts::PI / 4.0;
-        assert_close(segment.raycast(-0.5, 0.0, pi_over4.cos(), pi_over4.sin()).unwrap(),
-                     (2.0 as f64).sqrt() / 2.0);
+        assert_close(
+            segment
+                .raycast(-0.5, 0.0, pi_over4.cos(), pi_over4.sin())
+                .unwrap(),
+            (2.0 as f64).sqrt() / 2.0,
+        );
 
         pi_over4 = pi_over4 * 3.0;
-        assert_eq!(segment.raycast(-0.5, 0.0, pi_over4.cos(), pi_over4.sin()), None);
+        assert_eq!(
+            segment.raycast(-0.5, 0.0, pi_over4.cos(), pi_over4.sin()),
+            None
+        );
     }
 
     #[test]
