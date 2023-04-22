@@ -89,6 +89,7 @@ pub struct ParticleFilter {
     points: [PfPose; PARTICLE_FILTER_POINTS],
     empty_grid_cells: [PfPosition; NUM_NODES],
     map_segments: (Vec<HorizontalSegment>, Vec<VerticalSegment>),
+    sense_distances: [f64; 5],
 }
 
 #[pymethods]
@@ -117,6 +118,10 @@ impl ParticleFilter {
         segments
     }
 
+    pub fn get_sense_distances(&self) -> [f64; 5] {
+        self.sense_distances
+    }
+
     #[new]
     pub fn new(pacbot_x: usize, pacbot_y: usize, pacbot_angle: f64) -> Self {
         let empty_pose = PfPose {
@@ -142,6 +147,7 @@ impl ParticleFilter {
             points,
             empty_grid_cells,
             map_segments: Self::get_map_segments(),
+            sense_distances: [0.0; 5],
         };
 
         pf.update_cell_sort();
@@ -174,6 +180,11 @@ impl ParticleFilter {
         // find the best guess position
         self.pacbot_pose = self.points[0];
         self.update_cell_sort();
+
+        // update best guess sense distances based on raycast values
+        for i in 0..5 {
+            self.sense_distances[i] = self.raycast(self.pacbot_pose.pos, SENSOR_ANGLES[i]);
+        }
 
         // replace the worst half of the points with random points around the best points
         for i in PARTICLE_FILTER_POINTS / 2..PARTICLE_FILTER_POINTS {
