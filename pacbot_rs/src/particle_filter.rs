@@ -1,4 +1,4 @@
-use crate::grid::{is_walkable, NODE_COORDS, NUM_NODES};
+use crate::grid::{is_walkable, GRID_HEIGHT, GRID_WIDTH, NODE_COORDS, NUM_NODES};
 use crate::variables::{INNER_CELL_WIDTH, ROBOT_WIDTH};
 use pyo3::prelude::*;
 use rand::distributions::Uniform;
@@ -254,18 +254,39 @@ impl ParticleFilter {
         error
     }
 
+    /// Computes the "alt grid" of physical unit cells (as opposed to the "logical" cells
+    /// in `GRID` that don't directly correspond to the maze's physical dimensions).
+    fn get_alt_grid() -> [[bool; GRID_HEIGHT + 1]; GRID_WIDTH + 1] {
+        let mut alt_grid = [[true; GRID_HEIGHT + 1]; GRID_WIDTH + 1];
+
+        #[allow(clippy::needless_range_loop)]
+        for x in 1..=GRID_WIDTH - 1 {
+            for y in 1..=GRID_HEIGHT - 1 {
+                alt_grid[x][y] = is_walkable((x - 1, y - 1))
+                    && is_walkable((x, y - 1))
+                    && is_walkable((x - 1, y))
+                    && is_walkable((x, y));
+            }
+        }
+
+        alt_grid
+    }
+
     fn get_map_segments() -> (Vec<HorizontalSegment>, Vec<VerticalSegment>) {
         let mut horizontal_segments = Vec::new();
         let mut vertical_segments = Vec::new();
 
+        let grid = Self::get_alt_grid();
+
         // return the segments that represent walls in the map
-        let grid_width = 28;
-        let grid_height = 31;
+        let grid_width = grid.len();
+        let grid_height = grid[0].len();
 
         for y in 0..grid_height - 1 {
             let mut seg_start_x: Option<usize> = None;
+            #[allow(clippy::needless_range_loop)]
             for x in 0..grid_width {
-                let is_wall_here = is_walkable((x, y)) != is_walkable((x, y + 1));
+                let is_wall_here = grid[x][y] != grid[x][y + 1];
                 if is_wall_here && seg_start_x.is_none() {
                     seg_start_x = Some(x - 1);
                 }
@@ -283,7 +304,7 @@ impl ParticleFilter {
         for x in 0..grid_width - 1 {
             let mut seg_start_y: Option<usize> = None;
             for y in 0..grid_height {
-                let is_wall_here = is_walkable((x, y)) != is_walkable((x + 1, y));
+                let is_wall_here = grid[x][y] != grid[x + 1][y];
                 if is_wall_here && seg_start_y.is_none() {
                     seg_start_y = Some(y - 1);
                 }
