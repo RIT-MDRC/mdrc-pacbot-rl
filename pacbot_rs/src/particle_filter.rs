@@ -59,7 +59,7 @@ impl VerticalSegment {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct PfPosition {
     x: f64,
     y: f64,
@@ -76,7 +76,7 @@ impl PfPosition {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct PfPose {
     pos: PfPosition,
     angle: f64, // radians
@@ -239,6 +239,8 @@ impl ParticleFilter {
             self.points[i] = self.random_point();
         }
 
+        println!("{:?}", self.points[0]);
+
         // return the best guess position
         (
             (self.pacbot_pose.pos.x, self.pacbot_pose.pos.y),
@@ -325,13 +327,13 @@ impl ParticleFilter {
 
     fn random_point(&self) -> PfPose {
         let mut rng = rand::thread_rng();
-        let normal = Normal::new(0.0, 10.0).unwrap();
+        let normal = Normal::new(0.0, 2.0).unwrap();
         let random_value = rng.sample::<f64, _>(normal).abs();
         let index = (random_value.round() as usize).min(self.empty_grid_cells.len() - 1);
 
         let pos = self.empty_grid_cells[index];
 
-        let extra_space_per_side = (INNER_CELL_WIDTH - ROBOT_WIDTH) / 2.0;
+        let extra_space_per_side = (INNER_CELL_WIDTH - ROBOT_WIDTH) / 2.0 * 1.2;
 
         let x_range = Uniform::new(-extra_space_per_side, extra_space_per_side);
         let y_range = Uniform::new(-extra_space_per_side, extra_space_per_side);
