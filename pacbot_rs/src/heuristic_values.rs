@@ -142,12 +142,17 @@ pub fn get_heuristic_path(
         let values = next_points
             .iter()
             .map(|&pos| get_heuristic_value(game_state, pos));
-        let (next_action, _, best_next_point) = values
+        let min = values
             .enumerate()
             .zip(next_points)
             .filter_map(|((i, value), pos)| value.map(|v| (i, v, pos)))
-            .min_by_key(|&(_, value, _)| NotNan::new(value).unwrap())
-            .expect("at least one action should be valid");
+            .min_by_key(|&(_, value, _)| NotNan::new(value).unwrap());
+        let (next_action, _, best_next_point) = if let Some(min) = min {
+            min
+        } else {
+            eprintln!("WARNING: get_heuristic_path: no valid actions");
+            break;
+        };
 
         // stop if we're at a local minimum; otherwise update the path and continue
         if best_next_point == (x, y) {
