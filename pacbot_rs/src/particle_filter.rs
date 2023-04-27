@@ -1,5 +1,6 @@
-use crate::grid::{is_walkable, GRID_HEIGHT, GRID_WIDTH, NODE_COORDS, NUM_NODES};
+use crate::grid::{is_walkable, GRID_HEIGHT, GRID_WIDTH};
 use crate::variables::{INNER_CELL_WIDTH, ROBOT_WIDTH};
+use lazy_static::lazy_static;
 use pyo3::prelude::*;
 use rand::distributions::Uniform;
 use rand::Rng;
@@ -85,7 +86,7 @@ struct PfPose {
 pub struct ParticleFilter {
     pacbot_pose: PfPose,
     points: [PfPose; PARTICLE_FILTER_POINTS],
-    empty_grid_cells: [PfPosition; NUM_NODES],
+    empty_grid_cells: Vec<PfPosition>,
     map_segments: (Vec<HorizontalSegment>, Vec<VerticalSegment>),
     sense_distances: [f64; 5],
 }
@@ -133,10 +134,18 @@ impl ParticleFilter {
             angle: 0.0,
         };
 
-        let empty_grid_cells = NODE_COORDS.map(|(x, y)| PfPosition {
-            x: x as f64,
-            y: y as f64,
-        });
+        let empty_grid_cells = ALT_GRID
+            .iter()
+            .enumerate()
+            .flat_map(|(x, col)| {
+                col.iter().enumerate().filter_map(move |(y, is_wall)| {
+                    (!is_wall).then_some(PfPosition {
+                        x: x as f64,
+                        y: y as f64,
+                    })
+                })
+            })
+            .collect();
 
         let points = [empty_pose; PARTICLE_FILTER_POINTS];
 
@@ -254,29 +263,11 @@ impl ParticleFilter {
         error
     }
 
-    /// Computes the "alt grid" of physical unit cells (as opposed to the "logical" cells
-    /// in `GRID` that don't directly correspond to the maze's physical dimensions).
-    fn get_alt_grid() -> [[bool; GRID_HEIGHT + 1]; GRID_WIDTH + 1] {
-        let mut alt_grid = [[true; GRID_HEIGHT + 1]; GRID_WIDTH + 1];
-
-        #[allow(clippy::needless_range_loop)]
-        for x in 1..=GRID_WIDTH - 1 {
-            for y in 1..=GRID_HEIGHT - 1 {
-                alt_grid[x][y] = !is_walkable((x - 1, y - 1))
-                    && !is_walkable((x, y - 1))
-                    && !is_walkable((x - 1, y))
-                    && !is_walkable((x, y));
-            }
-        }
-
-        alt_grid
-    }
-
     fn get_map_segments() -> (Vec<HorizontalSegment>, Vec<VerticalSegment>) {
         let mut horizontal_segments = Vec::new();
         let mut vertical_segments = Vec::new();
 
-        let grid = Self::get_alt_grid();
+        let grid = &*ALT_GRID;
 
         // return the segments that represent walls in the map
         let grid_width = grid.len();
@@ -376,6 +367,26 @@ impl ParticleFilter {
 
         min_distance
     }
+}
+
+lazy_static! {
+    /// The "alt grid" of physical unit cells (as opposed to the "logical" cells in
+    /// `GRID` that don't directly correspond to the maze's physical dimensions).
+    static ref ALT_GRID: [[bool; GRID_HEIGHT + 1]; GRID_WIDTH + 1] = {
+        let mut alt_grid = [[true; GRID_HEIGHT + 1]; GRID_WIDTH + 1];
+
+        #[allow(clippy::needless_range_loop)]
+        for x in 1..=GRID_WIDTH - 1 {
+            for y in 1..=GRID_HEIGHT - 1 {
+                alt_grid[x][y] = !is_walkable((x - 1, y - 1))
+                    && !is_walkable((x, y - 1))
+                    && !is_walkable((x - 1, y))
+                    && !is_walkable((x, y));
+            }
+        }
+
+        alt_grid
+    };
 }
 
 #[cfg(test)]
