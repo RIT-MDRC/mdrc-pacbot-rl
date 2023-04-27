@@ -204,7 +204,8 @@ impl ParticleFilter {
         self.update_cell_sort();
 
         // update best guess sense distances based on raycast values
-        self.sense_distances = SENSOR_ANGLES.map(|angle| self.raycast(self.pacbot_pose.pos, angle));
+        self.sense_distances = SENSOR_ANGLES
+            .map(|angle| self.raycast(self.pacbot_pose.pos, angle + self.pacbot_pose.angle));
 
         // replace the worst half of the points with random points around the best points
         for i in PARTICLE_FILTER_POINTS / 2..PARTICLE_FILTER_POINTS {
