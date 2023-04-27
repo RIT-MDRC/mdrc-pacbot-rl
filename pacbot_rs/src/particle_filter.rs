@@ -251,6 +251,10 @@ impl ParticleFilter {
         let mut error = 0.0;
 
         for i in 0..5 {
+            if i == 4 {
+                // the last sensor is broken, so ignore it
+                continue;
+            }
             let angle = point.angle + SENSOR_ANGLES[i];
             let distance = self.raycast(point.pos, angle) - SENSOR_DISTANCE_FROM_CENTER;
             let sensor_distance = sensors[i];
