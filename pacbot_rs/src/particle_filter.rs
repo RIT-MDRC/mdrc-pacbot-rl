@@ -19,7 +19,7 @@ const SENSOR_ANGLES: [f64; 5] = [
     (-1.0 / 4.0) * std::f64::consts::PI,
 ];
 
-const SENSOR_DISTANCE_FROM_CENTER: f64 = 0.75 / 2.0;
+const SENSOR_DISTANCE_FROM_CENTER: f64 = 2.0 * 0.75 / 2.0; // passage is 2 grid units wide
 
 struct HorizontalSegment {
     x_min: f64,
