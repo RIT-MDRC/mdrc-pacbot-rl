@@ -257,13 +257,45 @@ impl ParticleFilter {
     }
 
     /**
-     * Sets the current best position - no point calculations are done, except raycasting
+     * Sets the current best position
      */
     pub fn set_pose(&mut self, x: f64, y: f64, angle: f64) {
+        self.rcv_position(x, y);
+
         self.pacbot_pose = PfPose {
             pos: PfPosition { x, y },
             angle,
         };
+        self.update_raycast_distances(&(self.pacbot_pose.clone()));
+    }
+
+    /**
+     * Call this when a new position is received from the server
+     */
+    pub fn rcv_position(&mut self, x: f64, y: f64) {
+        let old_pose = self.pacbot_pose.clone();
+        self.pacbot_pose = PfPose {
+            pos: PfPosition { x, y },
+            angle: old_pose.angle,
+        };
+        self.update_cell_sort();
+
+        // replace any points that are too far away from the new position
+        for i in 0..PARTICLE_FILTER_POINTS {
+            let point = self.points[i];
+            let distance = (point.pos.x - x).hypot(point.pos.y - y);
+            if distance > 1.0 {
+                self.points[i] = self.random_point();
+            }
+        }
+
+        // sort the points by distance to the new location
+        self.points.sort_unstable_by_key(|point| {
+            let distance = (point.pos.x - x).hypot(point.pos.y - y);
+            NotNan::new(distance).unwrap()
+        });
+
+        self.pacbot_pose = self.points[0];
         self.update_cell_sort();
         self.update_raycast_distances(&(self.pacbot_pose.clone()));
     }
