@@ -1,4 +1,4 @@
-use crate::grid::{is_walkable, GRID_HEIGHT, GRID_WIDTH};
+use crate::grid::{is_walkable, GRID_HEIGHT, GRID_WIDTH, NODE_COORDS, NUM_NODES};
 use crate::variables::{INNER_CELL_WIDTH, ROBOT_WIDTH};
 use lazy_static::lazy_static;
 use pyo3::prelude::*;
@@ -10,13 +10,14 @@ use ordered_float::NotNan;
 
 const PARTICLE_FILTER_POINTS: usize = 1000;
 const EPSILON: f64 = 0.0000001;
+const GRID_CELLS_PER_CM: f64 = 1.0 / 8.89;
 
 const SENSOR_ANGLES: [f64; 5] = [
-    0.0,
-    (1.0 / 8.0) * std::f64::consts::PI,
-    (1.0 / 4.0) * std::f64::consts::PI,
-    (-1.0 / 8.0) * std::f64::consts::PI,
+    (-2.0 / 4.0) * std::f64::consts::PI,
     (-1.0 / 4.0) * std::f64::consts::PI,
+    0.0,
+    (1.0 / 4.0) * std::f64::consts::PI,
+    (2.0 / 4.0) * std::f64::consts::PI,
 ];
 
 const SENSOR_DISTANCE_FROM_CENTER: f64 = 2.0 * 0.75 / 2.0; // passage is 2 grid units wide
@@ -86,7 +87,8 @@ struct PfPose {
 pub struct ParticleFilter {
     pacbot_pose: PfPose,
     points: [PfPose; PARTICLE_FILTER_POINTS],
-    empty_grid_cells: Vec<PfPosition>,
+    empty_grid_cells: [PfPosition; NUM_NODES],
+    // empty_grid_cells: Vec<PfPosition>,
     map_segments: (Vec<HorizontalSegment>, Vec<VerticalSegment>),
     sense_distances: [f64; 5],
 }
@@ -134,18 +136,23 @@ impl ParticleFilter {
             angle: 0.0,
         };
 
-        let empty_grid_cells = ALT_GRID
-            .iter()
-            .enumerate()
-            .flat_map(|(x, col)| {
-                col.iter().enumerate().filter_map(move |(y, is_wall)| {
-                    (!is_wall).then_some(PfPosition {
-                        x: x as f64,
-                        y: y as f64,
-                    })
-                })
-            })
-            .collect();
+        let empty_grid_cells = NODE_COORDS.map(|(x, y)| PfPosition {
+            x: x as f64,
+            y: y as f64,
+        });
+
+        // let empty_grid_cells = ALT_GRID
+        //     .iter()
+        //     .enumerate()
+        //     .flat_map(|(x, col)| {
+        //         col.iter().enumerate().filter_map(move |(y, is_wall)| {
+        //             (!is_wall).then_some(PfPosition {
+        //                 x: x as f64,
+        //                 y: y as f64,
+        //             })
+        //         })
+        //     })
+        //     .collect();
 
         let points = [empty_pose; PARTICLE_FILTER_POINTS];
 
@@ -169,6 +176,8 @@ impl ParticleFilter {
         for i in 0..PARTICLE_FILTER_POINTS {
             pf.points[i] = pf.random_point();
         }
+
+        pf.update_raycast_distances(&(pf.pacbot_pose.clone()));
 
         pf
     }
@@ -236,8 +245,7 @@ impl ParticleFilter {
         }
 
         // update best guess sense distances based on raycast values
-        self.sense_distances = SENSOR_ANGLES
-            .map(|angle| self.raycast(self.pacbot_pose.pos, angle + self.pacbot_pose.angle));
+        self.update_raycast_distances(&(self.pacbot_pose.clone()));
 
         println!("{:?}", self.points[0]);
 
@@ -260,7 +268,12 @@ impl ParticleFilter {
             }
             let angle = point.angle + SENSOR_ANGLES[i];
             let distance = self.raycast(point.pos, angle) - SENSOR_DISTANCE_FROM_CENTER;
-            let sensor_distance = sensors[i];
+            let mut sensor_distance = sensors[i];
+
+            // sensors can only reliably see up to 15cm
+            if sensor_distance > 15.0 * GRID_CELLS_PER_CM {
+                sensor_distance = 15.0 * GRID_CELLS_PER_CM;
+            }
 
             let diff = (distance - sensor_distance).abs();
 
@@ -372,7 +385,18 @@ impl ParticleFilter {
             }
         }
 
+        // sensor can only see up to 15cm
+        if min_distance > 15.0 * GRID_CELLS_PER_CM + ROBOT_WIDTH {
+            min_distance = 15.0 * GRID_CELLS_PER_CM + ROBOT_WIDTH;
+        }
+
         min_distance
+    }
+
+    fn update_raycast_distances(&mut self, pose: &PfPose) {
+        // update best guess sense distances based on raycast values
+        self.sense_distances =
+            SENSOR_ANGLES.map(|angle| self.raycast(pose.pos, angle + pose.angle));
     }
 }
 
