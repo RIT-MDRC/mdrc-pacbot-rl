@@ -255,6 +255,18 @@ impl ParticleFilter {
             self.pacbot_pose.angle,
         )
     }
+
+    /**
+     * Sets the current best position - no point calculations are done, except raycasting
+     */
+    pub fn set_pose(&mut self, x: f64, y: f64, angle: f64) {
+        self.pacbot_pose = PfPose {
+            pos: PfPosition { x, y },
+            angle,
+        };
+        self.update_cell_sort();
+        self.update_raycast_distances(&(self.pacbot_pose.clone()));
+    }
 }
 
 impl ParticleFilter {
