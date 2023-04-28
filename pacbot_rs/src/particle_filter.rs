@@ -247,8 +247,6 @@ impl ParticleFilter {
         // update best guess sense distances based on raycast values
         self.update_raycast_distances(&(self.pacbot_pose.clone()));
 
-        println!("{:?}", self.points[0]);
-
         // return the best guess position
         (
             (self.pacbot_pose.pos.x, self.pacbot_pose.pos.y),
