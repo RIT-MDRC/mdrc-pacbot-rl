@@ -94,3 +94,8 @@ def get_heuristic_path(
     game_state: GameState,
     max_path_len: Optional[int],
 ) -> list[tuple[int, int]]: ...
+def get_mcts_path(
+    game_state: GameState,
+    max_path_len: Optional[int],
+    mcts_iterations: Optional[int],
+) -> list[tuple[int, int]]: ...

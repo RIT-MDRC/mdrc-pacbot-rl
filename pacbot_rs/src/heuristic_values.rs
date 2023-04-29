@@ -4,8 +4,12 @@ use ordered_float::NotNan;
 use pyo3::prelude::*;
 
 use crate::{
-    game_state::GameState,
+    game_state::{
+        env::{Action, PacmanGym},
+        GameState,
+    },
     grid::{self, coords_to_node, DISTANCE_MATRIX, SUPER_PELLET_LOCS},
+    mcts::MCTSContext,
     variables::GridValue,
 };
 
@@ -167,6 +171,63 @@ pub fn get_heuristic_path(
 
             (x, y) = best_next_point;
             last_action = Some(next_action);
+        }
+    }
+
+    path
+}
+
+/// Computes a path from pacbot's current location, following the moves that MCTS wants to make.
+/// Params:
+///     mcts_iterations: Number of MCTS iterations to perform per step. Defaults to 100.
+#[pyfunction]
+pub fn get_mcts_path(
+    game_state: &GameState,
+    max_path_len: Option<usize>,
+    mcts_iterations: Option<usize>,
+) -> Vec<(usize, usize)> {
+    let mcts_iterations = mcts_iterations.unwrap_or(100);
+
+    // initialize the environment to the current game_state
+    let mut env = PacmanGym::new(false);
+    env.game_state = game_state.clone();
+
+    let mut path = vec![env.game_state.pacbot.pos];
+    let mut last_action = None;
+
+    loop {
+        // check if we've reached the max_path_len
+        if let Some(max_path_len) = max_path_len {
+            if path.len() == max_path_len {
+                break;
+            }
+        }
+
+        // get the next action
+        let mut mcts_context = MCTSContext::new();
+        let action = mcts_context.ponder_and_choose(&env, mcts_iterations);
+
+        // stop if the next action is to not move
+        if action == Action::Stay {
+            break;
+        }
+
+        // update the environment
+        let (_, done) = env.step(action);
+
+        // stop if the environment terminated; otherwise update the path and continue
+        if done {
+            break;
+        } else {
+            // add the current position to the path, replacing the last point if it's collinear
+            let next_point = env.game_state.pacbot.pos;
+            if last_action == Some(action) {
+                *path.last_mut().unwrap() = next_point;
+            } else {
+                path.push(next_point);
+            }
+
+            last_action = Some(action);
         }
     }
 

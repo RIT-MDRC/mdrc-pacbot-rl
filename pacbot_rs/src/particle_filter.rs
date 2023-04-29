@@ -271,7 +271,7 @@ impl ParticleFilter {
      * Call this when a new position is received from the server
      */
     pub fn rcv_position(&mut self, x: f64, y: f64) {
-        let old_pose = self.pacbot_pose.clone();
+        let old_pose = self.pacbot_pose;
         self.pacbot_pose = PfPose {
             pos: PfPosition { x, y },
             angle: old_pose.angle,
