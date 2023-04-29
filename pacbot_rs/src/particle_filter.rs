@@ -437,8 +437,8 @@ impl ParticleFilter {
         PfPose { pos, angle }
     }
 
-    /// Returns the cast ray distance to the closest wall segment, in grid units.
-    /// The returned distance is capped at 15cm from the edge of the robot.
+    /// Returns the cast ray distance from the given position (*not* the edge of the robot) to the
+    /// closest wall segment, in grid units.
     fn raycast(&self, start_pos: PfPosition, angle: f64) -> f64 {
         let (horizontal_segments, vertical_segments) = &self.map_segments;
 
@@ -457,11 +457,6 @@ impl ParticleFilter {
             if let Some(distance) = segment.raycast(start_pos.x, start_pos.y, vx, vy) {
                 min_distance = min_distance.min(distance);
             }
-        }
-
-        // sensor can only see up to 15cm
-        if min_distance > 15.0 * GRID_CELLS_PER_CM + ROBOT_WIDTH {
-            min_distance = 15.0 * GRID_CELLS_PER_CM + ROBOT_WIDTH;
         }
 
         min_distance
