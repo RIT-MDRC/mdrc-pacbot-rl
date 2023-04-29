@@ -313,6 +313,7 @@ static DIST_TO_VOLTAGE_COEFS: [(f64, f64); 4] = [
 /// Converts a distance (in cm) to the theoretical expected sensor voltage,
 /// using the model for the given sensor index.
 fn cm_to_sensor_voltage(cm: f64, sensor_index: usize) -> f64 {
+    assert!(cm >= 0.0);
     let (a, b) = DIST_TO_VOLTAGE_COEFS[sensor_index];
     match sensor_index {
         0 | 2 | 3 => a * cm.powf(b),
@@ -336,6 +337,12 @@ impl ParticleFilter {
             let theoretical_distance_grid_units =
                 self.raycast(point.pos, angle) - SENSOR_DISTANCE_FROM_CENTER;
             let theoretical_distance_cm = theoretical_distance_grid_units / GRID_CELLS_PER_CM;
+            if theoretical_distance_cm < 0.0 {
+                // For this particle, the sensor is in the wall or something.
+                // That's bad. Just add a big penalty to the error and continue.
+                error += 1000.0;
+                continue;
+            }
             let theoretical_voltage = cm_to_sensor_voltage(theoretical_distance_cm, i);
 
             let sensor_voltage = sensors[i];
