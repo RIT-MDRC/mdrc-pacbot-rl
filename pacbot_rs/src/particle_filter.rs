@@ -4,6 +4,7 @@ use lazy_static::lazy_static;
 use pyo3::prelude::*;
 use rand::distributions::Uniform;
 use rand::Rng;
+use rand_distr::num_traits::Pow;
 use rand_distr::{Distribution, Normal};
 
 use ordered_float::NotNan;
@@ -299,7 +300,31 @@ impl ParticleFilter {
     }
 }
 
+/// We model the distance -> voltage conversion as v(d) = a * d^b (except for sensor 1),
+/// where d is in centimeters, v is in volts, and a and b are constants.
+/// This array holds the (a, b) coefficients for each of the four good sensors
+/// (sensor indices 0, 1, 2, 3).
+static DIST_TO_VOLTAGE_COEFS: [(f64, f64); 4] = [
+    (4.22, -0.826),
+    (-0.172, 1.18), // these coefficients are for the model v(d) = a*x + b; this sensor is weird
+    (3.63, -0.809),
+    (3.52, -0.782),
+];
+
+/// Converts a distance (in cm) to the theoretical expected sensor voltage,
+/// using the model for the given sensor index.
+fn cm_to_sensor_voltage(cm: f64, sensor_index: usize) -> f64 {
+    let (a, b) = DIST_TO_VOLTAGE_COEFS[sensor_index];
+    match sensor_index {
+        0 | 2 | 3 => a * cm.pow(b),
+        1 => a * cm + b,
+        _ => unreachable!("Invalid sensor_index"),
+    }
+}
+
 impl ParticleFilter {
+    /// Computes the sensor vs. theoretical error for a given pose (`point`) and
+    /// sensor voltages (`sensors`).
     fn get_point_error(&self, point: &PfPose, sensors: [f64; 5]) -> f64 {
         let mut error = 0.0;
 
@@ -309,15 +334,14 @@ impl ParticleFilter {
                 continue;
             }
             let angle = point.angle + SENSOR_ANGLES[i];
-            let distance = self.raycast(point.pos, angle) - SENSOR_DISTANCE_FROM_CENTER;
-            let mut sensor_distance = sensors[i];
+            let theoretical_distance_grid_units =
+                self.raycast(point.pos, angle) - SENSOR_DISTANCE_FROM_CENTER;
+            let theoretical_distance_cm = theoretical_distance_grid_units / GRID_CELLS_PER_CM;
+            let theoretical_voltage = cm_to_sensor_voltage(theoretical_distance_cm, i);
 
-            // sensors can only reliably see up to 15cm
-            if sensor_distance > 15.0 * GRID_CELLS_PER_CM {
-                sensor_distance = 15.0 * GRID_CELLS_PER_CM;
-            }
+            let sensor_voltage = sensors[i];
 
-            let diff = (distance - sensor_distance).abs();
+            let diff = (theoretical_voltage - sensor_voltage).abs();
 
             error += diff;
         }
@@ -407,6 +431,8 @@ impl ParticleFilter {
         PfPose { pos, angle }
     }
 
+    /// Returns the cast ray distance to the closest wall segment, in grid units.
+    /// The returned distance is capped at 15cm from the edge of the robot.
     fn raycast(&self, start_pos: PfPosition, angle: f64) -> f64 {
         let (horizontal_segments, vertical_segments) = &self.map_segments;
 
