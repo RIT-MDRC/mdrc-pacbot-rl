@@ -13,11 +13,11 @@ const EPSILON: f64 = 0.0000001;
 const GRID_CELLS_PER_CM: f64 = 1.0 / 8.89;
 
 const SENSOR_ANGLES: [f64; 5] = [
-    (-2.0 / 4.0) * std::f64::consts::PI,
-    (-1.0 / 4.0) * std::f64::consts::PI,
-    0.0,
-    (1.0 / 4.0) * std::f64::consts::PI,
     (2.0 / 4.0) * std::f64::consts::PI,
+    (1.0 / 4.0) * std::f64::consts::PI,
+    0.0,
+    (-1.0 / 4.0) * std::f64::consts::PI,
+    (-2.0 / 4.0) * std::f64::consts::PI,
 ];
 
 const SENSOR_DISTANCE_FROM_CENTER: f64 = 2.0 * 0.75 / 2.0; // passage is 2 grid units wide
