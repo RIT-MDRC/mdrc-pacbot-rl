@@ -4,7 +4,6 @@ use lazy_static::lazy_static;
 use pyo3::prelude::*;
 use rand::distributions::Uniform;
 use rand::Rng;
-use rand_distr::num_traits::Pow;
 use rand_distr::{Distribution, Normal};
 
 use ordered_float::NotNan;
@@ -316,7 +315,7 @@ static DIST_TO_VOLTAGE_COEFS: [(f64, f64); 4] = [
 fn cm_to_sensor_voltage(cm: f64, sensor_index: usize) -> f64 {
     let (a, b) = DIST_TO_VOLTAGE_COEFS[sensor_index];
     match sensor_index {
-        0 | 2 | 3 => a * cm.pow(b),
+        0 | 2 | 3 => a * cm.powf(b),
         1 => a * cm + b,
         _ => unreachable!("Invalid sensor_index"),
     }
