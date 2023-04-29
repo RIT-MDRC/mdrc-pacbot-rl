@@ -316,8 +316,15 @@ fn cm_to_sensor_voltage(cm: f64, sensor_index: usize) -> f64 {
     assert!(cm >= 0.0);
     let (a, b) = DIST_TO_VOLTAGE_COEFS[sensor_index];
     match sensor_index {
-        0 | 2 | 3 => a * cm.powf(b),
+        0 | 3 => a * cm.powf(b),
         1 => a * cm + b,
+        2 => {
+            if cm < 15.0 {
+                a * cm.powf(b)
+            } else {
+                -0.0141 + 0.027 * cm + -9.71E-05 * cm.powf(2.0)
+            }
+        }
         _ => unreachable!("Invalid sensor_index"),
     }
 }
